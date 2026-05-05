@@ -269,6 +269,7 @@ export default function App() {
   const [newInspectionDate, setNewInspectionDate] = useState(today())
   const [selectedStatus, setSelectedStatus] = useState('regular')
   const [savedAt, setSavedAt] = useState('')
+  const [activeTab, setActiveTab] = useState('dashboard')
 
   useEffect(() => {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -447,19 +448,20 @@ export default function App() {
   }
 
   const latest = analytics.latest
+  const tabs = [
+    { id: 'dashboard', label: 'Dashboard', icon: <BarChart3 size={18} />, hint: 'indicadores e gráficos' },
+    { id: 'trechos', label: 'Trechos', icon: <Train size={18} />, hint: 'cadastro do trecho' },
+    { id: 'inspecoes', label: 'Inspeções', icon: <CalendarDays size={18} />, hint: 'grade dos dormentes' },
+    { id: 'relatorios', label: 'Relatórios', icon: <FileText size={18} />, hint: 'ranking e exportações' }
+  ]
 
   return (
     <main className="app">
-      <header className="hero">
+      <header className="hero compact-hero">
         <div className="hero-copy">
           <span className="eyebrow"><Train size={16} /> Sistema de acompanhamento de dormentes</span>
           <h1>Controle de desempenho por trecho ferroviário</h1>
-          <p>Registre inspeções, acompanhe a deterioração dos dormentes e compare quais trechos da companhia exigem prioridade.</p>
-          <div className="hero-tags">
-            <span className="hero-tag">Azul escuro</span>
-            <span className="hero-tag">Branco</span>
-            <span className="hero-tag hero-tag-green">Verde claro</span>
-          </div>
+          <p>Use o menu principal para navegar por dashboard, cadastro dos trechos, inspeções e relatórios sem deixar a página longa demais.</p>
         </div>
         <div className="hero-side">
           <div className={`classification classification-${analytics.classification.toLowerCase().replace('ç', 'c').replace('ã', 'a')}`}>
@@ -467,17 +469,24 @@ export default function App() {
             <strong>{analytics.classification}</strong>
             <span>{latest.desempenho}/100</span>
           </div>
-          <div className="hero-art" aria-hidden="true">
-            {Array.from({ length: 12 }).map((_, index) => (
-              <span key={index} className={`hero-block ${index % 2 === 0 ? 'primary' : 'accent'}`} />
-            ))}
-          </div>
         </div>
       </header>
 
-      <section className="layout">
-        <aside className="panel no-print">
-          <div className="panel-title-row">
+      <nav className="main-menu no-print" aria-label="Menu principal">
+        {tabs.map((tab) => (
+          <button key={tab.id} className={`menu-tab ${activeTab === tab.id ? 'active' : ''}`} onClick={() => setActiveTab(tab.id)}>
+            {tab.icon}
+            <span>
+              <strong>{tab.label}</strong>
+              <small>{tab.hint}</small>
+            </span>
+          </button>
+        ))}
+      </nav>
+
+      <section className="layout app-workspace">
+        <aside className="panel sidebar no-print">
+          <div className="panel-title-row compact-row">
             <h2>Trechos</h2>
             <button className="icon-button" onClick={addTrack} title="Adicionar trecho"><Plus size={18} /></button>
           </div>
@@ -493,229 +502,294 @@ export default function App() {
               )
             })}
           </div>
+          <div className="sidebar-actions">
+            <button onClick={saveData}><Save size={16} /> Salvar</button>
+            <button onClick={exportExcel} className="success"><FileSpreadsheet size={16} /> Excel</button>
+            <button onClick={printPDF} className="danger"><FileText size={16} /> PDF</button>
+            <button onClick={loadDemo} className="outline"><RotateCcw size={16} /> Exemplo</button>
+          </div>
+          {savedAt && <p className="muted">Último salvamento: {savedAt}</p>}
           <button className="danger outline full" disabled={tracks.length === 1} onClick={() => removeTrack(selectedTrack.id)}><Trash2 size={16} /> Excluir trecho selecionado</button>
         </aside>
 
-        <section className="content">
-          <section className="panel no-print">
-            <div className="panel-title-row">
-              <h2>Dados do trecho</h2>
-              <div className="actions">
-                <button onClick={saveData}><Save size={16} /> Salvar</button>
-                <button onClick={exportExcel} className="success"><FileSpreadsheet size={16} /> Excel</button>
-                <button onClick={printPDF} className="danger"><FileText size={16} /> PDF</button>
-                <button onClick={loadDemo} className="outline"><RotateCcw size={16} /> Exemplo</button>
-              </div>
-            </div>
-
-            <div className="form-grid">
-              <label>
-                Nome do trecho
-                <input value={selectedTrack.name} onChange={(e) => updateTrack({ name: e.target.value })} />
-              </label>
-              <label>
-                KM inicial
-                <input value={selectedTrack.kmStart} onChange={(e) => updateTrack({ kmStart: e.target.value })} />
-              </label>
-              <label>
-                KM final
-                <input value={selectedTrack.kmEnd} onChange={(e) => updateTrack({ kmEnd: e.target.value })} />
-              </label>
-              <label>
-                Quantidade de dormentes
-                <span className="input-with-button">
-                  <input type="number" min="1" max="300" value={selectedTrack.sleeperCount} onChange={(e) => updateTrack({ sleeperCount: e.target.value })} />
-                  <button onClick={applySleeperCount}>Aplicar</button>
-                </span>
-              </label>
-            </div>
-            {savedAt && <p className="muted">Último salvamento: {savedAt}</p>}
-          </section>
-
-          <section className="metrics report-section">
-            <Metric icon={<BarChart3 />} title="Desempenho atual" value={`${latest.desempenho}/100`} detail="Bom 100, Regular 50, Inservível 0" />
-            <Metric icon={<TrendingDown />} title="Velocidade de queda" value={`${analytics.averageSpeed}`} detail="ponto(s) perdidos por dia" />
-            <Metric icon={<AlertTriangle />} title="Inservíveis" value={`${latest.Inservível}`} detail={`${latest.criticalPercent}% do trecho`} />
-            <Metric icon={<CalendarDays />} title="Projeção crítica" value={analytics.projectedDaysToCritical === null ? 'Estável' : `${analytics.projectedDaysToCritical} dias`} detail="Se o ritmo continuar" />
-          </section>
-
-          <section className="panel report-section">
-            <h2>Leitura automática</h2>
-            <p className="analysis-text">
-              {analytics.interpretation} Na última inspeção, o trecho possui <strong>{latest.Bom}</strong> dormente(s) bom(ns), <strong>{latest.Regular}</strong> regular(es) e <strong>{latest.Inservível}</strong> inservível(is). A perda total de desempenho desde a primeira inspeção foi de <strong>{analytics.totalScoreDrop}</strong> ponto(s) em <strong>{analytics.totalDays}</strong> dia(s).
-            </p>
-          </section>
-
-          <section className="charts report-section">
-            <ChartCard title="Desempenho do trecho" subtitle="Quanto mais a linha cai, pior a evolução.">
-              <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={analytics.rows}>
-                  <CartesianGrid stroke={CHART_COLORS.grid} strokeDasharray="3 3" />
-                  <XAxis dataKey="data" stroke={CHART_COLORS.text} />
-                  <YAxis domain={[0, 100]} stroke={CHART_COLORS.text} />
-                  <Tooltip />
-                  <Legend />
-                  <Line type="monotone" dataKey="desempenho" name="Desempenho" stroke={CHART_COLORS.navy} strokeWidth={3} dot={{ r: 5, fill: CHART_COLORS.green, stroke: CHART_COLORS.navy }} />
-                </LineChart>
-              </ResponsiveContainer>
-            </ChartCard>
-
-            <ChartCard title="Composição por inspeção" subtitle="Mostra a passagem de bom para regular e inservível.">
-              <ResponsiveContainer width="100%" height={280}>
-                <AreaChart data={analytics.rows}>
-                  <CartesianGrid stroke={CHART_COLORS.grid} strokeDasharray="3 3" />
-                  <XAxis dataKey="data" stroke={CHART_COLORS.text} />
-                  <YAxis allowDecimals={false} stroke={CHART_COLORS.text} />
-                  <Tooltip />
-                  <Legend />
-                  <Area type="monotone" dataKey="Bom" stackId="1" stroke={CHART_COLORS.green} fill={CHART_COLORS.green} fillOpacity={0.75} />
-                  <Area type="monotone" dataKey="Regular" stackId="1" stroke={CHART_COLORS.aqua} fill={CHART_COLORS.aqua} fillOpacity={0.7} />
-                  <Area type="monotone" dataKey="Inservível" stackId="1" stroke={CHART_COLORS.navy} fill={CHART_COLORS.navy} fillOpacity={0.9} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </ChartCard>
-
-            <ChartCard title="Velocidade de deterioração" subtitle="Pontos perdidos por dia entre uma inspeção e outra.">
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={analytics.rows}>
-                  <CartesianGrid stroke={CHART_COLORS.grid} strokeDasharray="3 3" />
-                  <XAxis dataKey="data" stroke={CHART_COLORS.text} />
-                  <YAxis stroke={CHART_COLORS.text} />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="deteriorationSpeed" name="Pontos/dia" fill={CHART_COLORS.navy} radius={[8, 8, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartCard>
-
-            <ChartCard title="Dormentes que pioraram" subtitle="Quantidade de dormentes que decaíram desde a visita anterior.">
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={analytics.rows}>
-                  <CartesianGrid stroke={CHART_COLORS.grid} strokeDasharray="3 3" />
-                  <XAxis dataKey="data" stroke={CHART_COLORS.text} />
-                  <YAxis allowDecimals={false} stroke={CHART_COLORS.text} />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="worsened" name="Pioraram" fill={CHART_COLORS.navy} radius={[8, 8, 0, 0]} />
-                  <Bar dataKey="newCritical" name="Novos inservíveis" fill={CHART_COLORS.green} radius={[8, 8, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartCard>
-          </section>
-
-          <section className="panel no-print">
-            <h2>Nova inspeção</h2>
-            <div className="inspection-controls">
-              <input type="date" value={newInspectionDate} onChange={(e) => setNewInspectionDate(e.target.value)} />
-              <button onClick={addInspection}><Plus size={16} /> Adicionar linha</button>
-              <div className="status-picker">
-                {Object.entries(STATUS).map(([key, status]) => (
-                  <button key={key} className={`${status.className} ${selectedStatus === key ? 'selected' : ''}`} onClick={() => setSelectedStatus(key)}>{status.label}</button>
-                ))}
-              </div>
-            </div>
-            <label className="full-label">
-              Regra de retorno / periodicidade
-              <textarea value={selectedTrack.periodRule} onChange={(e) => updateTrack({ periodRule: e.target.value })} rows={3} />
-            </label>
-          </section>
-
-          <section className="panel report-section">
-            <div className="panel-title-row">
+        <section className="content tab-content">
+          <section className={`tab-section ${activeTab === 'dashboard' ? 'active' : ''}`}>
+            <div className="section-heading no-print">
               <div>
-                <h2>Grade de inspeção</h2>
-                <p className="muted">Cada coluna é um dormente. Cada linha é uma data de inspeção.</p>
+                <p className="section-kicker">Aba de apresentação</p>
+                <h2>Dashboard</h2>
               </div>
-              <div className="legend no-print">
-                {Object.entries(STATUS).map(([key, status]) => <span key={key} className={status.className}>{status.label}</span>)}
-              </div>
+              <p>Indicadores, leitura automática e gráficos do trecho selecionado.</p>
             </div>
 
-            <div className="table-wrap">
-              <table className="inspection-table">
-                <thead>
-                  <tr>
-                    <th className="sticky-col">Data</th>
-                    <th>Observação</th>
-                    {selectedTrack.sleepers.map((sleeper) => <th key={sleeper.id}>{sleeper.id}</th>)}
-                    <th className="no-print">Excluir</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...selectedTrack.inspections].sort((a, b) => parseDate(a.date) - parseDate(b.date)).map((inspection) => (
-                    <tr key={inspection.id}>
-                      <td className="sticky-col strong">{formatDate(inspection.date)}</td>
-                      <td>
-                        <input className="table-input no-print" value={inspection.notes} onChange={(e) => updateNote(inspection.id, e.target.value)} />
-                        <span className="print-only">{inspection.notes}</span>
-                      </td>
-                      {selectedTrack.sleepers.map((sleeper) => {
-                        const key = inspection.conditions?.[sleeper.id] || 'bom'
-                        return (
-                          <td key={sleeper.id}>
-                            <button className={`cell ${STATUS[key].className} no-print`} onClick={() => updateCell(inspection.id, sleeper.id)} onDoubleClick={() => cycleCell(inspection.id, sleeper.id)}>{STATUS[key].short}</button>
-                            <span className={`print-cell ${STATUS[key].className} print-only`}>{STATUS[key].short}</span>
-                          </td>
-                        )
-                      })}
-                      <td className="no-print"><button className="ghost" disabled={selectedTrack.inspections.length === 1} onClick={() => deleteInspection(inspection.id)}><Trash2 size={15} /></button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <section className="metrics report-section">
+              <Metric icon={<BarChart3 />} title="Desempenho atual" value={`${latest.desempenho}/100`} detail="Bom 100, Regular 50, Inservível 0" />
+              <Metric icon={<TrendingDown />} title="Velocidade de queda" value={`${analytics.averageSpeed}`} detail="ponto(s) perdidos por dia" />
+              <Metric icon={<AlertTriangle />} title="Inservíveis" value={`${latest.Inservível}`} detail={`${latest.criticalPercent}% do trecho`} />
+              <Metric icon={<CalendarDays />} title="Projeção crítica" value={analytics.projectedDaysToCritical === null ? 'Estável' : `${analytics.projectedDaysToCritical} dias`} detail="Se o ritmo continuar" />
+            </section>
+
+            <section className="panel report-section">
+              <h2>Leitura automática</h2>
+              <p className="analysis-text">
+                {analytics.interpretation} Na última inspeção, o trecho possui <strong>{latest.Bom}</strong> dormente(s) bom(ns), <strong>{latest.Regular}</strong> regular(es) e <strong>{latest.Inservível}</strong> inservível(is). A perda total de desempenho desde a primeira inspeção foi de <strong>{analytics.totalScoreDrop}</strong> ponto(s) em <strong>{analytics.totalDays}</strong> dia(s).
+              </p>
+            </section>
+
+            <section className="charts report-section">
+              <ChartCard title="Desempenho do trecho" subtitle="Quanto mais a linha cai, pior a evolução.">
+                <ResponsiveContainer width="100%" height={280}>
+                  <LineChart data={analytics.rows}>
+                    <CartesianGrid stroke={CHART_COLORS.grid} strokeDasharray="3 3" />
+                    <XAxis dataKey="data" stroke={CHART_COLORS.text} />
+                    <YAxis domain={[0, 100]} stroke={CHART_COLORS.text} />
+                    <Tooltip />
+                    <Legend />
+                    <Line type="monotone" dataKey="desempenho" name="Desempenho" stroke={CHART_COLORS.navy} strokeWidth={3} dot={{ r: 5, fill: CHART_COLORS.green, stroke: CHART_COLORS.navy }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </ChartCard>
+
+              <ChartCard title="Composição por inspeção" subtitle="Mostra a passagem de bom para regular e inservível.">
+                <ResponsiveContainer width="100%" height={280}>
+                  <AreaChart data={analytics.rows}>
+                    <CartesianGrid stroke={CHART_COLORS.grid} strokeDasharray="3 3" />
+                    <XAxis dataKey="data" stroke={CHART_COLORS.text} />
+                    <YAxis allowDecimals={false} stroke={CHART_COLORS.text} />
+                    <Tooltip />
+                    <Legend />
+                    <Area type="monotone" dataKey="Bom" stackId="1" stroke={CHART_COLORS.green} fill={CHART_COLORS.green} fillOpacity={0.75} />
+                    <Area type="monotone" dataKey="Regular" stackId="1" stroke={CHART_COLORS.aqua} fill={CHART_COLORS.aqua} fillOpacity={0.7} />
+                    <Area type="monotone" dataKey="Inservível" stackId="1" stroke={CHART_COLORS.navy} fill={CHART_COLORS.navy} fillOpacity={0.9} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </ChartCard>
+
+              <ChartCard title="Velocidade de deterioração" subtitle="Pontos perdidos por dia entre uma inspeção e outra.">
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={analytics.rows}>
+                    <CartesianGrid stroke={CHART_COLORS.grid} strokeDasharray="3 3" />
+                    <XAxis dataKey="data" stroke={CHART_COLORS.text} />
+                    <YAxis stroke={CHART_COLORS.text} />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="deteriorationSpeed" name="Pontos/dia" fill={CHART_COLORS.navy} radius={[8, 8, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartCard>
+
+              <ChartCard title="Dormentes que pioraram" subtitle="Quantidade de dormentes que decaíram desde a visita anterior.">
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={analytics.rows}>
+                    <CartesianGrid stroke={CHART_COLORS.grid} strokeDasharray="3 3" />
+                    <XAxis dataKey="data" stroke={CHART_COLORS.text} />
+                    <YAxis allowDecimals={false} stroke={CHART_COLORS.text} />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="worsened" name="Pioraram" fill={CHART_COLORS.navy} radius={[8, 8, 0, 0]} />
+                    <Bar dataKey="newCritical" name="Novos inservíveis" fill={CHART_COLORS.green} radius={[8, 8, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartCard>
+            </section>
           </section>
 
-          <section className="split report-section">
-            <div className="panel">
-              <h2>Ranking dos trechos da companhia</h2>
-              <div className="table-wrap compact">
-                <table>
+          <section className={`tab-section ${activeTab === 'trechos' ? 'active' : ''}`}>
+            <div className="section-heading no-print">
+              <div>
+                <p className="section-kicker">Cadastro e configuração</p>
+                <h2>Trechos</h2>
+              </div>
+              <p>Edite os dados do trecho, quantidade de dormentes e regra de retorno.</p>
+            </div>
+
+            <section className="panel no-print">
+              <div className="panel-title-row">
+                <h2>Dados do trecho</h2>
+                <div className="actions">
+                  <button onClick={saveData}><Save size={16} /> Salvar</button>
+                  <button onClick={loadDemo} className="outline"><RotateCcw size={16} /> Exemplo</button>
+                </div>
+              </div>
+
+              <div className="form-grid">
+                <label>
+                  Nome do trecho
+                  <input value={selectedTrack.name} onChange={(e) => updateTrack({ name: e.target.value })} />
+                </label>
+                <label>
+                  KM inicial
+                  <input value={selectedTrack.kmStart} onChange={(e) => updateTrack({ kmStart: e.target.value })} />
+                </label>
+                <label>
+                  KM final
+                  <input value={selectedTrack.kmEnd} onChange={(e) => updateTrack({ kmEnd: e.target.value })} />
+                </label>
+                <label>
+                  Quantidade de dormentes
+                  <span className="input-with-button">
+                    <input type="number" min="1" max="300" value={selectedTrack.sleeperCount} onChange={(e) => updateTrack({ sleeperCount: e.target.value })} />
+                    <button onClick={applySleeperCount}>Aplicar</button>
+                  </span>
+                </label>
+              </div>
+              <label className="full-label rule-box">
+                Regra de retorno / periodicidade
+                <textarea value={selectedTrack.periodRule} onChange={(e) => updateTrack({ periodRule: e.target.value })} rows={4} />
+              </label>
+              {savedAt && <p className="muted">Último salvamento: {savedAt}</p>}
+            </section>
+
+            <section className="metrics compact-metrics report-section">
+              <Metric icon={<Train />} title="Trecho selecionado" value={selectedTrack.sleepers.length} detail="dormente(s) cadastrados" />
+              <Metric icon={<BarChart3 />} title="Classificação" value={analytics.classification} detail={`Risco ${analytics.riskIndex}`} />
+              <Metric icon={<CalendarDays />} title="Inspeções" value={selectedTrack.inspections.length} detail="registro(s) no histórico" />
+              <Metric icon={<AlertTriangle />} title="Atenção" value={`${latest.Regular + latest.Inservível}`} detail="dormente(s) regular ou inservível" />
+            </section>
+          </section>
+
+          <section className={`tab-section ${activeTab === 'inspecoes' ? 'active' : ''}`}>
+            <div className="section-heading no-print">
+              <div>
+                <p className="section-kicker">Lançamento de campo</p>
+                <h2>Inspeções</h2>
+              </div>
+              <p>Adicione visitas e marque o estado de cada dormente na grade.</p>
+            </div>
+
+            <section className="panel no-print">
+              <h2>Nova inspeção</h2>
+              <div className="inspection-controls">
+                <input type="date" value={newInspectionDate} onChange={(e) => setNewInspectionDate(e.target.value)} />
+                <button onClick={addInspection}><Plus size={16} /> Adicionar linha</button>
+                <div className="status-picker">
+                  {Object.entries(STATUS).map(([key, status]) => (
+                    <button key={key} className={`${status.className} ${selectedStatus === key ? 'selected' : ''}`} onClick={() => setSelectedStatus(key)}>{status.label}</button>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            <section className="panel report-section">
+              <div className="panel-title-row">
+                <div>
+                  <h2>Grade de inspeção</h2>
+                  <p className="muted">Cada coluna é um dormente. Cada linha é uma data de inspeção.</p>
+                </div>
+                <div className="legend no-print">
+                  {Object.entries(STATUS).map(([key, status]) => <span key={key} className={status.className}>{status.label}</span>)}
+                </div>
+              </div>
+
+              <div className="table-wrap">
+                <table className="inspection-table">
                   <thead>
-                    <tr><th>#</th><th>Trecho</th><th>Classificação</th><th>Desempenho</th><th>Velocidade</th><th>Risco</th></tr>
+                    <tr>
+                      <th className="sticky-col">Data</th>
+                      <th>Observação</th>
+                      {selectedTrack.sleepers.map((sleeper) => <th key={sleeper.id}>{sleeper.id}</th>)}
+                      <th className="no-print">Excluir</th>
+                    </tr>
                   </thead>
                   <tbody>
-                    {ranking.map((item, index) => (
-                      <tr key={item.track.id} className={item.track.id === selectedTrack.id ? 'highlight-row' : ''}>
-                        <td>{index + 1}</td>
-                        <td>{item.track.name}</td>
-                        <td>{item.analytics.classification}</td>
-                        <td>{item.analytics.latest.desempenho}</td>
-                        <td>{item.analytics.averageSpeed}</td>
-                        <td>{item.analytics.riskIndex}</td>
+                    {[...selectedTrack.inspections].sort((a, b) => parseDate(a.date) - parseDate(b.date)).map((inspection) => (
+                      <tr key={inspection.id}>
+                        <td className="sticky-col strong">{formatDate(inspection.date)}</td>
+                        <td>
+                          <input className="table-input no-print" value={inspection.notes} onChange={(e) => updateNote(inspection.id, e.target.value)} />
+                          <span className="print-only">{inspection.notes}</span>
+                        </td>
+                        {selectedTrack.sleepers.map((sleeper) => {
+                          const key = inspection.conditions?.[sleeper.id] || 'bom'
+                          return (
+                            <td key={sleeper.id}>
+                              <button className={`cell ${STATUS[key].className} no-print`} onClick={() => updateCell(inspection.id, sleeper.id)} onDoubleClick={() => cycleCell(inspection.id, sleeper.id)}>{STATUS[key].short}</button>
+                              <span className={`print-cell ${STATUS[key].className} print-only`}>{STATUS[key].short}</span>
+                            </td>
+                          )
+                        })}
+                        <td className="no-print"><button className="ghost" disabled={selectedTrack.inspections.length === 1} onClick={() => deleteInspection(inspection.id)}><Trash2 size={15} /></button></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+            </section>
+          </section>
+
+          <section className={`tab-section ${activeTab === 'relatorios' ? 'active' : ''}`}>
+            <div className="section-heading no-print">
+              <div>
+                <p className="section-kicker">Consulta e saída</p>
+                <h2>Relatórios</h2>
+              </div>
+              <p>Veja ranking, piores dormentes e use as exportações.</p>
             </div>
 
-            <div className="panel">
-              <h2>Piores dormentes do trecho</h2>
-              {analytics.worstSleepers.length === 0 ? (
-                <p className="analysis-text ok">Nenhum dormente com degradação registrada.</p>
-              ) : (
+            <section className="panel no-print export-panel">
+              <div>
+                <h2>Exportações</h2>
+                <p className="muted">Gere Excel ou PDF usando os dados do trecho selecionado e do ranking geral.</p>
+              </div>
+              <div className="actions">
+                <button onClick={saveData}><Save size={16} /> Salvar antes</button>
+                <button onClick={exportExcel} className="success"><FileSpreadsheet size={16} /> Exportar Excel</button>
+                <button onClick={printPDF} className="danger"><FileText size={16} /> Gerar PDF</button>
+              </div>
+            </section>
+
+            <section className="split report-section">
+              <div className="panel">
+                <h2>Ranking dos trechos da companhia</h2>
                 <div className="table-wrap compact">
                   <table>
-                    <thead><tr><th>Dormente</th><th>Status atual</th><th>Pioras</th><th>Crítico desde</th></tr></thead>
+                    <thead>
+                      <tr><th>#</th><th>Trecho</th><th>Classificação</th><th>Desempenho</th><th>Velocidade</th><th>Risco</th></tr>
+                    </thead>
                     <tbody>
-                      {analytics.worstSleepers.map((item) => (
-                        <tr key={item.id}>
-                          <td>{item.id}</td>
-                          <td>{STATUS[item.currentStatus].label}</td>
-                          <td>{item.degradationSteps}</td>
-                          <td>{item.criticalSince ? formatDate(item.criticalSince) : '-'}</td>
+                      {ranking.map((item, index) => (
+                        <tr key={item.track.id} className={item.track.id === selectedTrack.id ? 'highlight-row' : ''}>
+                          <td>{index + 1}</td>
+                          <td>{item.track.name}</td>
+                          <td>{item.analytics.classification}</td>
+                          <td>{item.analytics.latest.desempenho}</td>
+                          <td>{item.analytics.averageSpeed}</td>
+                          <td>{item.analytics.riskIndex}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              )}
-            </div>
+              </div>
+
+              <div className="panel">
+                <h2>Piores dormentes do trecho</h2>
+                {analytics.worstSleepers.length === 0 ? (
+                  <p className="analysis-text ok">Nenhum dormente com degradação registrada.</p>
+                ) : (
+                  <div className="table-wrap compact">
+                    <table>
+                      <thead><tr><th>Dormente</th><th>Status atual</th><th>Pioras</th><th>Crítico desde</th></tr></thead>
+                      <tbody>
+                        {analytics.worstSleepers.map((item) => (
+                          <tr key={item.id}>
+                            <td>{item.id}</td>
+                            <td>{STATUS[item.currentStatus].label}</td>
+                            <td>{item.degradationSteps}</td>
+                            <td>{item.criticalSince ? formatDate(item.criticalSince) : '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </section>
           </section>
         </section>
       </section>
     </main>
+
   )
 }
 

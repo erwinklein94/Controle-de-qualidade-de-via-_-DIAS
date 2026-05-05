@@ -83,3 +83,10 @@ O sistema calcula:
 - velocidade média de queda em pontos por dia;
 - percentual de inservíveis;
 - ranking de risco entre trechos.
+
+## Atualização de interface
+
+- Página reorganizada com menu principal.
+- Conteúdo separado em abas: Dashboard, Trechos, Inspeções e Relatórios.
+- Indicadores e gráficos de apresentação concentrados na aba Dashboard.
+- Botões de salvar, Excel e PDF preservados.
