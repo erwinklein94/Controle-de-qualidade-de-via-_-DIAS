@@ -8,9 +8,11 @@ import {
   FileText,
   LayoutDashboard,
   Menu,
+  Moon,
   Plus,
   RotateCcw,
   Save,
+  Sun,
   Train,
   Trash2,
   TrendingDown,
@@ -32,6 +34,7 @@ import {
 } from 'recharts'
 
 const STORAGE_KEY = 'sistema-dormentes-rumo-v1'
+const THEME_KEY = 'sistema-dormentes-rumo-theme'
 
 const STATUS = {
   bom: { label: 'Bom', short: 'B', score: 100, severity: 0, className: 'status-bom' },
@@ -49,6 +52,17 @@ const CHART_COLORS = {
   red: '#7a1f1f',
   grid: '#d7e3ef',
   text: '#22435e'
+}
+
+const DARK_CHART_COLORS = {
+  navy: '#63b3ff',
+  green: '#8bd86f',
+  white: '#ffffff',
+  aqua: '#58d2ff',
+  yellow: '#f2c94c',
+  red: '#ff7b7b',
+  grid: '#244f78',
+  text: '#d7ebff'
 }
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -83,9 +97,16 @@ function createTrack(name = 'Trecho exemplo - Malha Rumo', count = 12) {
     name,
     equipment: 'Equipamento / trecho a informar',
     responsible: 'Equipe de prospecção',
+    malha: 'Malha Central',
+    sleeperMaterial: 'concreto',
+    geometryType: 'tangente',
+    trackClass: 'C.3',
+    hasGaugeLoss: 'nao',
+    hasSupportLoss: 'nao',
     kmStart: 'km 123+000',
     kmEnd: 'km 123+500',
     hasJointWeld: 'nao',
+    jointSurroundingGood: 'sim',
     sleeperCount: count,
     sleepers,
     inspections: [first],
@@ -348,6 +369,65 @@ function analyzeTrack(track) {
   }
 }
 
+function getActionPlan(track, analytics) {
+  const latest = analytics.latest || {}
+  const maxCluster = latest.maiorMalhaCritica || 0
+  const geometry = track.geometryType || 'tangente'
+  const isCurve = geometry === 'curva'
+  const gaugeLoss = track.hasGaugeLoss === 'sim'
+  const supportLoss = track.hasSupportLoss === 'sim'
+  const jointNeedsAction = track.hasJointWeld === 'sim' && track.jointSurroundingGood === 'nao'
+
+  let priority = 'Monitorar'
+  let deadline = 'Próxima rotina'
+  let restriction = 'Sem restrição sugerida pelo sistema'
+  let action = 'Manter acompanhamento periódico e comparar evolução na próxima inspeção.'
+  let reason = 'Sem ruína, sem malha crítica relevante e sem perda de bitola/suporte cadastrada.'
+
+  if (latest.Ruína > 0) {
+    priority = 'Crítico gerencial'
+    deadline = 'Tratativa imediata'
+    restriction = 'Avaliar restrição operacional conforme condição de via'
+    action = 'Marcar ruína com duas pinturas, substituir o dormente em ruína e avaliar todo o agrupamento com inservíveis intercalados.'
+    reason = 'Dormente em ruína deixou de cumprir suporte/fixação e transfere esforço aos adjacentes.'
+  } else if (gaugeLoss && supportLoss && ((isCurve && maxCluster >= 3) || (!isCurve && maxCluster >= 5))) {
+    priority = 'P1'
+    deadline = '24h / interdição programada'
+    restriction = 'Interdição programada conforme avaliação local'
+    action = 'Priorizar substituição da malha crítica e escalar para decisão operacional.'
+    reason = 'Sequência com perda de bitola e suporte atingiu limite alto para o traçado informado.'
+  } else if (gaugeLoss && supportLoss && ((isCurve && maxCluster >= 2) || (!isCurve && maxCluster >= 3))) {
+    priority = 'P2'
+    deadline = '48h'
+    restriction = 'Restrição 22 km/h até tratativa'
+    action = 'Programar substituição em curto prazo e acompanhar evolução diária até execução.'
+    reason = 'Sequência com perda de bitola e suporte atingiu limite médio para o traçado informado.'
+  } else if (gaugeLoss && !supportLoss && ((isCurve && maxCluster >= 2) || (!isCurve && maxCluster >= 5))) {
+    priority = 'P3'
+    deadline = '7 dias'
+    restriction = 'Restrição 22 km/h até tratativa'
+    action = 'Programar substituição e monitorar vencimento de prazo para não migrar para prioridade superior.'
+    reason = 'Sequência com perda de bitola sem perda de suporte atingiu limite baixo para o traçado informado.'
+  } else if (latest.Inservível > 0 || latest.clustersCriticos > 0) {
+    priority = 'Prospecção crítica'
+    deadline = 'Planejar substituição'
+    restriction = 'Avaliar restrição pela classe e condição local'
+    action = 'Marcar inservíveis com uma pintura, quantificar por equipamento e acompanhar regulares adjacentes.'
+    reason = 'Existem dormentes inservíveis ou agrupamentos que precisam entrar no plano de substituição.'
+  }
+
+  if (jointNeedsAction) {
+    action += ' Em junta/solda sem dormentes bons antes e depois, aplicar marcação com duas pinturas para substituição.'
+    reason += ' Há junta/solda com entorno sem dormentes bons cadastrados.'
+  }
+
+  return { priority, deadline, restriction, action, reason, jointNeedsAction }
+}
+
+function createPresentationFileName(track) {
+  return `apresentacao-dormentes-${track.name || 'trecho'}`.replaceAll(' ', '-').toLowerCase()
+}
+
 export default function App() {
   const [tracks, setTracks] = useState(() => [createTrack()])
   const [selectedTrackId, setSelectedTrackId] = useState(null)
@@ -356,6 +436,7 @@ export default function App() {
   const [savedAt, setSavedAt] = useState('')
   const [activeTab, setActiveTab] = useState('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || 'dark')
 
   useEffect(() => {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -373,6 +454,11 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    document.body.setAttribute('data-theme', theme)
+    localStorage.setItem(THEME_KEY, theme)
+  }, [theme])
+
+  useEffect(() => {
     if (!selectedTrackId && tracks.length) setSelectedTrackId(tracks[0].id)
   }, [tracks, selectedTrackId])
 
@@ -383,6 +469,8 @@ export default function App() {
       .map((track) => ({ track, analytics: analyzeTrack(track) }))
       .sort((a, b) => b.analytics.riskIndex - a.analytics.riskIndex)
   }, [tracks])
+  const actionPlan = useMemo(() => getActionPlan(selectedTrack, analytics), [selectedTrack, analytics])
+  const chartColors = theme === 'dark' ? DARK_CHART_COLORS : CHART_COLORS
 
   function updateTrack(patch) {
     setTracks((current) => current.map((track) => track.id === selectedTrack.id ? { ...track, ...patch } : track))
@@ -553,6 +641,15 @@ export default function App() {
     window.print()
   }
 
+  function printPresentationPDF() {
+    setActiveTab('apresentacao')
+    setTimeout(() => window.print(), 150)
+  }
+
+  function toggleTheme() {
+    setTheme((current) => current === 'dark' ? 'light' : 'dark')
+  }
+
   function openTab(tabId) {
     setActiveTab(tabId)
     setSidebarOpen(false)
@@ -564,6 +661,7 @@ export default function App() {
     { id: 'dados', label: 'Cadastro do trecho', icon: Train },
     { id: 'inspecoes', label: 'Inspeções', icon: CalendarDays },
     { id: 'relatorios', label: 'Relatórios', icon: BarChart3 },
+    { id: 'apresentacao', label: 'Apresentação PDF', icon: FileText },
     { id: 'parametros', label: 'Parâmetros', icon: FileText }
   ]
 
@@ -637,6 +735,9 @@ export default function App() {
             <button className="menu-trigger outline" onClick={() => setSidebarOpen(true)}>
               <Menu size={18} /> Menu
             </button>
+            <button className="theme-toggle outline" onClick={toggleTheme}>
+              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />} {theme === 'dark' ? 'Tema claro' : 'Tema escuro'}
+            </button>
           </div>
           <span className="eyebrow"><Train size={16} /> Sistema de acompanhamento de dormentes</span>
           <h1>Controle de desempenho por trecho ferroviário</h1>
@@ -670,7 +771,8 @@ export default function App() {
         <div className="actions">
           <button onClick={saveData}><Save size={16} /> Salvar</button>
           <button onClick={exportExcel} className="success"><FileSpreadsheet size={16} /> Excel</button>
-          <button onClick={printPDF} className="danger"><FileText size={16} /> PDF</button>
+          <button onClick={printPresentationPDF} className="danger"><FileText size={16} /> PDF Gerencial</button>
+          <button onClick={printPDF} className="outline"><FileText size={16} /> PDF da tela</button>
           <button onClick={loadDemo} className="outline"><RotateCcw size={16} /> Exemplo</button>
         </div>
       </section>
@@ -694,16 +796,28 @@ export default function App() {
               </p>
             </section>
 
+            <section className="panel report-section action-plan-card">
+              <div>
+                <span className="section-kicker">Plano sugerido</span>
+                <h2>{actionPlan.priority} • {actionPlan.deadline}</h2>
+                <p className="analysis-text"><strong>Ação:</strong> {actionPlan.action}</p>
+              </div>
+              <div className="action-plan-meta">
+                <span><strong>Restrição</strong>{actionPlan.restriction}</span>
+                <span><strong>Motivo</strong>{actionPlan.reason}</span>
+              </div>
+            </section>
+
             <section className="charts report-section">
               <ChartCard title="Desempenho do trecho" subtitle="Quanto mais a linha cai, pior a evolução.">
                 <ResponsiveContainer width="100%" height={280}>
                   <LineChart data={analytics.rows}>
-                    <CartesianGrid stroke={CHART_COLORS.grid} strokeDasharray="3 3" />
-                    <XAxis dataKey="data" stroke={CHART_COLORS.text} />
-                    <YAxis domain={[0, 100]} stroke={CHART_COLORS.text} />
+                    <CartesianGrid stroke={chartColors.grid} strokeDasharray="3 3" />
+                    <XAxis dataKey="data" stroke={chartColors.text} />
+                    <YAxis domain={[0, 100]} stroke={chartColors.text} />
                     <Tooltip />
                     <Legend />
-                    <Line type="monotone" dataKey="desempenho" name="Desempenho" stroke={CHART_COLORS.navy} strokeWidth={3} dot={{ r: 5, fill: CHART_COLORS.green, stroke: CHART_COLORS.navy }} />
+                    <Line type="monotone" dataKey="desempenho" name="Desempenho" stroke={chartColors.navy} strokeWidth={3} dot={{ r: 5, fill: chartColors.green, stroke: chartColors.navy }} />
                   </LineChart>
                 </ResponsiveContainer>
               </ChartCard>
@@ -711,29 +825,57 @@ export default function App() {
               <ChartCard title="Composição por inspeção" subtitle="Mostra a passagem de bom para regular, inservível e ruína.">
                 <ResponsiveContainer width="100%" height={280}>
                   <AreaChart data={analytics.rows}>
-                    <CartesianGrid stroke={CHART_COLORS.grid} strokeDasharray="3 3" />
-                    <XAxis dataKey="data" stroke={CHART_COLORS.text} />
-                    <YAxis allowDecimals={false} stroke={CHART_COLORS.text} />
+                    <CartesianGrid stroke={chartColors.grid} strokeDasharray="3 3" />
+                    <XAxis dataKey="data" stroke={chartColors.text} />
+                    <YAxis allowDecimals={false} stroke={chartColors.text} />
                     <Tooltip />
                     <Legend />
-                    <Area type="monotone" dataKey="Bom" stackId="1" stroke={CHART_COLORS.green} fill={CHART_COLORS.green} fillOpacity={0.65} />
-                    <Area type="monotone" dataKey="Regular" stackId="1" stroke={CHART_COLORS.yellow} fill={CHART_COLORS.yellow} fillOpacity={0.7} />
-                    <Area type="monotone" dataKey="Inservível" stackId="1" stroke={CHART_COLORS.navy} fill={CHART_COLORS.navy} fillOpacity={0.85} />
-                    <Area type="monotone" dataKey="Ruína" stackId="1" stroke={CHART_COLORS.red} fill={CHART_COLORS.red} fillOpacity={0.88} />
+                    <Area type="monotone" dataKey="Bom" stackId="1" stroke={chartColors.green} fill={chartColors.green} fillOpacity={0.65} />
+                    <Area type="monotone" dataKey="Regular" stackId="1" stroke={chartColors.yellow} fill={chartColors.yellow} fillOpacity={0.7} />
+                    <Area type="monotone" dataKey="Inservível" stackId="1" stroke={chartColors.navy} fill={chartColors.navy} fillOpacity={0.85} />
+                    <Area type="monotone" dataKey="Ruína" stackId="1" stroke={chartColors.red} fill={chartColors.red} fillOpacity={0.88} />
                   </AreaChart>
+                </ResponsiveContainer>
+              </ChartCard>
+
+              <ChartCard title="Taxa crítica e tendência" subtitle="Taxa crítica = percentual de inservíveis + ruína no trecho. Regular ou pior indica pressão futura.">
+                <ResponsiveContainer width="100%" height={280}>
+                  <LineChart data={analytics.rows}>
+                    <CartesianGrid stroke={chartColors.grid} strokeDasharray="3 3" />
+                    <XAxis dataKey="data" stroke={chartColors.text} />
+                    <YAxis domain={[0, 100]} stroke={chartColors.text} />
+                    <Tooltip />
+                    <Legend />
+                    <Line type="monotone" dataKey="criticalPercent" name="Taxa crítica %" stroke={chartColors.red} strokeWidth={3} />
+                    <Line type="monotone" dataKey="regularOrWorsePercent" name="Regular ou pior %" stroke={chartColors.yellow} strokeWidth={3} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </ChartCard>
+
+              <ChartCard title="Novas entradas críticas" subtitle="Mostra novos dormentes críticos e novas ruínas entre inspeções.">
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={analytics.rows}>
+                    <CartesianGrid stroke={chartColors.grid} strokeDasharray="3 3" />
+                    <XAxis dataKey="data" stroke={chartColors.text} />
+                    <YAxis allowDecimals={false} stroke={chartColors.text} />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="newCritical" name="Novos críticos" fill={chartColors.navy} radius={[8, 8, 0, 0]} />
+                    <Bar dataKey="newRuins" name="Novas ruínas" fill={chartColors.red} radius={[8, 8, 0, 0]} />
+                  </BarChart>
                 </ResponsiveContainer>
               </ChartCard>
 
               <ChartCard title="Clusters / malhas críticas" subtitle="Agrupamentos consecutivos de inservíveis e ruína por inspeção.">
                 <ResponsiveContainer width="100%" height={280}>
                   <BarChart data={analytics.rows}>
-                    <CartesianGrid stroke={CHART_COLORS.grid} strokeDasharray="3 3" />
-                    <XAxis dataKey="data" stroke={CHART_COLORS.text} />
-                    <YAxis allowDecimals={false} stroke={CHART_COLORS.text} />
+                    <CartesianGrid stroke={chartColors.grid} strokeDasharray="3 3" />
+                    <XAxis dataKey="data" stroke={chartColors.text} />
+                    <YAxis allowDecimals={false} stroke={chartColors.text} />
                     <Tooltip />
                     <Legend />
-                    <Bar dataKey="clustersCriticos" name="Malhas críticas" fill={CHART_COLORS.navy} radius={[8, 8, 0, 0]} />
-                    <Bar dataKey="maiorMalhaCritica" name="Maior malha" fill={CHART_COLORS.red} radius={[8, 8, 0, 0]} />
+                    <Bar dataKey="clustersCriticos" name="Malhas críticas" fill={chartColors.navy} radius={[8, 8, 0, 0]} />
+                    <Bar dataKey="maiorMalhaCritica" name="Maior malha" fill={chartColors.red} radius={[8, 8, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </ChartCard>
@@ -741,13 +883,13 @@ export default function App() {
               <ChartCard title="Plano de marcação" subtitle="Uma pintura para inservíveis e duas pinturas para ruína.">
                 <ResponsiveContainer width="100%" height={280}>
                   <BarChart data={analytics.rows}>
-                    <CartesianGrid stroke={CHART_COLORS.grid} strokeDasharray="3 3" />
-                    <XAxis dataKey="data" stroke={CHART_COLORS.text} />
-                    <YAxis allowDecimals={false} stroke={CHART_COLORS.text} />
+                    <CartesianGrid stroke={chartColors.grid} strokeDasharray="3 3" />
+                    <XAxis dataKey="data" stroke={chartColors.text} />
+                    <YAxis allowDecimals={false} stroke={chartColors.text} />
                     <Tooltip />
                     <Legend />
-                    <Bar dataKey="pinturasUma" name="1 pintura" fill={CHART_COLORS.navy} radius={[8, 8, 0, 0]} />
-                    <Bar dataKey="pinturasDuas" name="2 pinturas" fill={CHART_COLORS.red} radius={[8, 8, 0, 0]} />
+                    <Bar dataKey="pinturasUma" name="1 pintura" fill={chartColors.navy} radius={[8, 8, 0, 0]} />
+                    <Bar dataKey="pinturasDuas" name="2 pinturas" fill={chartColors.red} radius={[8, 8, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </ChartCard>
@@ -755,12 +897,12 @@ export default function App() {
               <ChartCard title="Velocidade de deterioração" subtitle="Pontos perdidos por dia entre uma inspeção e outra.">
                 <ResponsiveContainer width="100%" height={280}>
                   <BarChart data={analytics.rows}>
-                    <CartesianGrid stroke={CHART_COLORS.grid} strokeDasharray="3 3" />
-                    <XAxis dataKey="data" stroke={CHART_COLORS.text} />
-                    <YAxis stroke={CHART_COLORS.text} />
+                    <CartesianGrid stroke={chartColors.grid} strokeDasharray="3 3" />
+                    <XAxis dataKey="data" stroke={chartColors.text} />
+                    <YAxis stroke={chartColors.text} />
                     <Tooltip />
                     <Legend />
-                    <Bar dataKey="deteriorationSpeed" name="Pontos/dia" fill={CHART_COLORS.navy} radius={[8, 8, 0, 0]} />
+                    <Bar dataKey="deteriorationSpeed" name="Pontos/dia" fill={chartColors.navy} radius={[8, 8, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </ChartCard>
@@ -768,14 +910,14 @@ export default function App() {
               <ChartCard title="Dormentes que pioraram" subtitle="Quantidade de dormentes que decaíram desde a visita anterior.">
                 <ResponsiveContainer width="100%" height={280}>
                   <BarChart data={analytics.rows}>
-                    <CartesianGrid stroke={CHART_COLORS.grid} strokeDasharray="3 3" />
-                    <XAxis dataKey="data" stroke={CHART_COLORS.text} />
-                    <YAxis allowDecimals={false} stroke={CHART_COLORS.text} />
+                    <CartesianGrid stroke={chartColors.grid} strokeDasharray="3 3" />
+                    <XAxis dataKey="data" stroke={chartColors.text} />
+                    <YAxis allowDecimals={false} stroke={chartColors.text} />
                     <Tooltip />
                     <Legend />
-                    <Bar dataKey="worsened" name="Pioraram" fill={CHART_COLORS.navy} radius={[8, 8, 0, 0]} />
-                    <Bar dataKey="newCritical" name="Novos críticos" fill={CHART_COLORS.yellow} radius={[8, 8, 0, 0]} />
-                    <Bar dataKey="newRuins" name="Novas ruínas" fill={CHART_COLORS.red} radius={[8, 8, 0, 0]} />
+                    <Bar dataKey="worsened" name="Pioraram" fill={chartColors.navy} radius={[8, 8, 0, 0]} />
+                    <Bar dataKey="newCritical" name="Novos críticos" fill={chartColors.yellow} radius={[8, 8, 0, 0]} />
+                    <Bar dataKey="newRuins" name="Novas ruínas" fill={chartColors.red} radius={[8, 8, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </ChartCard>
@@ -805,6 +947,35 @@ export default function App() {
                 <label>
                   Responsável / equipe
                   <input value={selectedTrack.responsible || ''} onChange={(e) => updateTrack({ responsible: e.target.value })} />
+                </label>
+                <label>
+                  Malha
+                  <select value={selectedTrack.malha || 'Malha Central'} onChange={(e) => updateTrack({ malha: e.target.value })}>
+                    <option>Malha Central</option>
+                    <option>Ferronorte</option>
+                    <option>Malha Paulista</option>
+                    <option>Outra</option>
+                  </select>
+                </label>
+                <label>
+                  Material
+                  <select value={selectedTrack.sleeperMaterial || 'concreto'} onChange={(e) => updateTrack({ sleeperMaterial: e.target.value })}>
+                    <option value="concreto">Concreto</option>
+                    <option value="madeira">Madeira</option>
+                    <option value="aco">Aço</option>
+                    <option value="polimero">Polímero</option>
+                  </select>
+                </label>
+                <label>
+                  Traçado
+                  <select value={selectedTrack.geometryType || 'tangente'} onChange={(e) => updateTrack({ geometryType: e.target.value })}>
+                    <option value="tangente">Tangente</option>
+                    <option value="curva">Curva</option>
+                  </select>
+                </label>
+                <label>
+                  Classe
+                  <input value={selectedTrack.trackClass || ''} onChange={(e) => updateTrack({ trackClass: e.target.value })} placeholder="Ex.: C.3" />
                 </label>
                 <label>
                   KM inicial
@@ -1032,6 +1203,18 @@ export default function App() {
           </>
         )}
 
+        {activeTab === 'apresentacao' && (
+          <PresentationTab
+            track={selectedTrack}
+            analytics={analytics}
+            latest={latest}
+            ranking={ranking}
+            actionPlan={actionPlan}
+            chartColors={chartColors}
+            onPrint={printPresentationPDF}
+          />
+        )}
+
         {activeTab === 'parametros' && (
           <ParameterTab />
         )}
@@ -1058,6 +1241,136 @@ function ChartCard({ title, subtitle, children }) {
       <p>{subtitle}</p>
       {children}
     </article>
+  )
+}
+
+function PresentationTab({ track, analytics, latest, ranking, actionPlan, chartColors, onPrint }) {
+  const topRisks = analytics.worstSleepers.slice(0, 6)
+  const clusters = latest.clusterDetails || []
+  const fileName = createPresentationFileName(track)
+
+  return (
+    <section className="presentation-page report-section">
+      <section className="panel presentation-cover">
+        <div>
+          <span className="section-kicker">Apresentação gerencial</span>
+          <h2>{track.name}</h2>
+          <p>{track.equipment || 'Equipamento não informado'} • {track.kmStart} até {track.kmEnd}</p>
+          <p className="muted">Arquivo sugerido: {fileName}.pdf</p>
+        </div>
+        <div className="presentation-score">
+          <span>Classificação</span>
+          <strong>{analytics.classification}</strong>
+          <em>{latest.desempenho}/100</em>
+        </div>
+        <button className="danger no-print" onClick={onPrint}><FileText size={16} /> Gerar PDF gerencial</button>
+      </section>
+
+      <section className="presentation-kpis">
+        <Metric icon={<AlertTriangle />} title="Críticos" value={`${latest.Inservível + latest.Ruína}`} detail={`${latest.criticalPercent}% inservível + ruína`} />
+        <Metric icon={<Train />} title="Malhas" value={`${latest.clustersCriticos}`} detail={`Maior: ${latest.maiorMalhaCritica} dormente(s)`} />
+        <Metric icon={<TrendingDown />} title="Piora" value={`${analytics.totalScoreDrop}`} detail={`em ${analytics.totalDays} dia(s)`} />
+        <Metric icon={<CalendarDays />} title="Plano" value={actionPlan.priority} detail={actionPlan.deadline} />
+      </section>
+
+      <section className="panel presentation-section">
+        <h2>1. Resumo executivo</h2>
+        <p className="analysis-text">{analytics.interpretation} {actionPlan.action}</p>
+      </section>
+
+      <section className="split presentation-section">
+        <ChartCard title="Evolução do desempenho" subtitle="Perda de desempenho ao longo das inspeções.">
+          <ResponsiveContainer width="100%" height={260}>
+            <LineChart data={analytics.rows}>
+              <CartesianGrid stroke={chartColors.grid} strokeDasharray="3 3" />
+              <XAxis dataKey="data" stroke={chartColors.text} />
+              <YAxis domain={[0, 100]} stroke={chartColors.text} />
+              <Tooltip />
+              <Legend />
+              <Line type="monotone" dataKey="desempenho" name="Desempenho" stroke={chartColors.navy} strokeWidth={3} />
+            </LineChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard title="Críticos e ruína" subtitle="Quantidade de inservíveis e ruína por inspeção.">
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={analytics.rows}>
+              <CartesianGrid stroke={chartColors.grid} strokeDasharray="3 3" />
+              <XAxis dataKey="data" stroke={chartColors.text} />
+              <YAxis allowDecimals={false} stroke={chartColors.text} />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey="Inservível" name="Inservível" fill={chartColors.navy} radius={[8, 8, 0, 0]} />
+              <Bar dataKey="Ruína" name="Ruína" fill={chartColors.red} radius={[8, 8, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      </section>
+
+      <section className="split presentation-section">
+        <ChartCard title="Malhas / clusters" subtitle="Agrupamentos consecutivos críticos.">
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={analytics.rows}>
+              <CartesianGrid stroke={chartColors.grid} strokeDasharray="3 3" />
+              <XAxis dataKey="data" stroke={chartColors.text} />
+              <YAxis allowDecimals={false} stroke={chartColors.text} />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey="clustersCriticos" name="Malhas" fill={chartColors.navy} radius={[8, 8, 0, 0]} />
+              <Bar dataKey="maiorMalhaCritica" name="Maior malha" fill={chartColors.red} radius={[8, 8, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard title="Marcação de prospecção" subtitle="Uma pintura para inservível; duas pinturas para ruína.">
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={analytics.rows}>
+              <CartesianGrid stroke={chartColors.grid} strokeDasharray="3 3" />
+              <XAxis dataKey="data" stroke={chartColors.text} />
+              <YAxis allowDecimals={false} stroke={chartColors.text} />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey="pinturasUma" name="1 pintura" fill={chartColors.navy} radius={[8, 8, 0, 0]} />
+              <Bar dataKey="pinturasDuas" name="2 pinturas" fill={chartColors.red} radius={[8, 8, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      </section>
+
+      <section className="panel presentation-section">
+        <h2>2. Plano de ação sugerido</h2>
+        <div className="action-plan-meta presentation-action-meta">
+          <span><strong>Prioridade</strong>{actionPlan.priority}</span>
+          <span><strong>Prazo</strong>{actionPlan.deadline}</span>
+          <span><strong>Restrição</strong>{actionPlan.restriction}</span>
+          <span><strong>Motivo</strong>{actionPlan.reason}</span>
+        </div>
+      </section>
+
+      <section className="split presentation-section">
+        <div className="panel">
+          <h2>3. Malhas críticas</h2>
+          {clusters.length === 0 ? (
+            <p className="analysis-text ok">Sem malhas críticas na última inspeção.</p>
+          ) : (
+            <div className="table-wrap compact"><table><thead><tr><th>#</th><th>Dormentes</th><th>Qtd.</th><th>Inservíveis</th><th>Ruína</th></tr></thead><tbody>{clusters.map((cluster) => <tr key={cluster.id}><td>{cluster.id}</td><td>{cluster.descricao}</td><td>{cluster.quantidade}</td><td>{cluster.inserviveis}</td><td>{cluster.ruinas}</td></tr>)}</tbody></table></div>
+          )}
+        </div>
+        <div className="panel">
+          <h2>4. Dormentes de maior risco</h2>
+          {topRisks.length === 0 ? (
+            <p className="analysis-text ok">Sem dormentes degradados no trecho.</p>
+          ) : (
+            <div className="table-wrap compact"><table><thead><tr><th>Dormente</th><th>Status</th><th>Pioras</th><th>Crítico desde</th></tr></thead><tbody>{topRisks.map((item) => <tr key={item.id}><td>{item.id}</td><td>{STATUS[item.currentStatus].label}</td><td>{item.degradationSteps}</td><td>{item.criticalSince ? formatDate(item.criticalSince) : '-'}</td></tr>)}</tbody></table></div>
+          )}
+        </div>
+      </section>
+
+      <section className="panel presentation-section">
+        <h2>5. Comparativo entre trechos</h2>
+        <div className="table-wrap compact"><table><thead><tr><th>#</th><th>Trecho</th><th>Classificação</th><th>Críticos</th><th>Malhas</th><th>Risco</th></tr></thead><tbody>{ranking.map((item, index) => <tr key={item.track.id} className={item.track.id === track.id ? 'highlight-row' : ''}><td>{index + 1}</td><td>{item.track.name}</td><td>{item.analytics.classification}</td><td>{item.analytics.latest.Inservível + item.analytics.latest.Ruína}</td><td>{item.analytics.latest.clustersCriticos}</td><td>{item.analytics.riskIndex}</td></tr>)}</tbody></table></div>
+      </section>
+    </section>
   )
 }
 
