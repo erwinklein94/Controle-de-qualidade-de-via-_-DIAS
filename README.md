@@ -83,3 +83,15 @@ O sistema calcula:
 - velocidade média de queda em pontos por dia;
 - percentual de inservíveis;
 - ranking de risco entre trechos.
+
+## Atualização orientada aos critérios de Marcelo Dias
+
+Esta versão adiciona controles voltados à prospecção e apresentação gerencial:
+
+- Aba **Parâmetros** com explicação didática de Bom, Regular, Inservível e Ruína.
+- Classificação de dormente em **Ruína** além de Bom, Regular e Inservível.
+- Resumo automático de **malhas críticas / clusters**.
+- Quantificação de **inservíveis**, **ruína**, **regulares adjacentes**, **uma pintura** e **duas pinturas**.
+- Campos de levantamento por **equipamento/ativo**, **responsável/equipe** e indicação de **junta/solda no trilho**.
+- Gráficos para desempenho, composição por inspeção, clusters, plano de marcação e velocidade de deterioração.
+- Exportação Excel atualizada com os novos indicadores.
