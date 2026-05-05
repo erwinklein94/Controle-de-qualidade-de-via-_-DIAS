@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rumo | Monitoramento de Dormentes</title>
+
+  <!-- Tailwind via CDN: ideal para GitHub Pages simples, sem build -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- React via CDN -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+  <!-- Babel permite escrever JSX direto neste HTML -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Ícones -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .scroll-soft::-webkit-scrollbar {
+      height: 10px;
+      width: 10px;
+    }
+
+    .scroll-soft::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 999px;
+    }
+
+    .scroll-soft::-webkit-scrollbar-thumb {
+      background: rgba(19, 168, 223, 0.75);
+      border-radius: 999px;
+    }
+
+    .cell-button {
+      transition: transform 0.15s ease, filter 0.15s ease;
+    }
+
+    .cell-button:hover {
+      transform: scale(1.06);
+      filter: brightness(1.04);
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useEffect, useMemo, useState } = React;
+
+    const STORAGE_KEY = "rumo-monitoramento-dormentes-github-pages-v1";
+
+    const STATUS = [
+      {
+        key: "bom",
+        label: "Bom",
+        short: "B",
+        score: 4,
+        cell: "bg-emerald-400",
+        light: "bg-emerald-100 text-emerald-800 border-emerald-300",
+        dark: "bg-emerald-400/20 text-emerald-100 border-emerald-300/40"
+      },
+      {
+        key: "regular",
+        label: "Regular",
+        short: "R",
+        score: 3,
+        cell: "bg-yellow-300",
+        light: "bg-yellow-100 text-yellow-800 border-yellow-300",
+        dark: "bg-yellow-400/20 text-yellow-100 border-yellow-300/40"
+      },
+      {
+        key: "inservivel",
+        label: "Inservível",
+        short: "I",
+        score: 2,
+        cell: "bg-orange-400",
+        light: "bg-orange-100 text-orange-800 border-orange-300",
+        dark: "bg-orange-400/20 text-orange-100 border-orange-300/40"
+      },
+      {
+        key: "ruina",
+        label: "Ruína",
+        short: "X",
+        score: 1,
+        cell: "bg-red-500",
+        light: "bg-red-100 text-red-800 border-red-300",
+        dark: "bg-red-400/20 text-red-100 border-red-300/40"
+      }
+    ];
+
+    const statusByKey = Object.fromEntries(STATUS.map((status) => [status.key, status]));
+
+    function cn(...classes) {
+      return classes.filter(Boolean).join(" ");
+    }
+
+    function todayISO() {
+      return new Date().toISOString().slice(0, 10);
+    }
+
+    function formatDate(iso) {
+      if (!iso) return "—";
+      const [year, month, day] = iso.split("-").map(Number);
+      return new Date(year, month - 1, day).toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "2-digit"
+      });
+    }
+
+    function addDays(iso, amount) {
+      const [year, month, day] = iso.split("-").map(Number);
+      const date = new Date(year, month - 1, day);
+      date.setDate(date.getDate() + Number(amount || 0));
+      return date.toISOString().slice(0, 10);
+    }
+
+    function diffDays(fromIso, toIso = todayISO()) {
+      const from = new Date(fromIso + "T00:00:00");
+      const to = new Date(toIso + "T00:00:00");
+      return Math.round((to - from) / 86400000);
+    }
+
+    function makeSleepers(amount) {
+      return Array.from({ length: amount }, (_, index) => ({
+        id: `D-${String(index + 1).padStart(3, "0")}`,
+        km: "",
+        trilho: index % 2 === 0 ? "E" : "D"
+      }));
+    }
+
+    const initialSleepers = makeSleepers(18);
+
+    const initialInspection = {
+      id: "insp-inicial",
+      date: todayISO(),
+      inspector: "Marcelo Dias",
+      weather: "Seco",
+      notes: "Inspeção inicial do trecho. Todos os dormentes cadastrados como bons.",
+      values: Object.fromEntries(initialSleepers.map((sleeper) => [sleeper.id, "bom"]))
+    };
+
+    function Icon({ name, className = "h-5 w-5" }) {
+      const icons = window.lucide || {};
+      const LucideIcon = icons[name];
+      if (!LucideIcon) return null;
+      return <LucideIcon className={className} />;
+    }
+
+    function StatusPill({ statusKey, dark }) {
+      const status = statusByKey[statusKey] || statusByKey.bom;
+      return (
+        <span className={cn(
+          "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-bold",
+          dark ? status.dark : status.light
+        )}>
+          <span className={cn("h-2 w-2 rounded-full", status.cell)}></span>
+          {status.label}
+        </span>
+      );
+    }
+
+    function Card({ children, dark, className = "" }) {
+      return (
+        <section className={cn(
+          "rounded-2xl border p-4 shadow-xl backdrop-blur",
+          dark
+            ? "border-white/10 bg-[#06284d]/75 shadow-black/20"
+            : "border-slate-200 bg-white shadow-slate-200/70",
+          className
+        )}>
+          {children}
+        </section>
+      );
+    }
+
+    function Button({ children, dark, variant = "primary", className = "", ...props }) {
+      const variants = {
+        primary: dark
+          ? "bg-[#13a8df] text-white hover:bg-[#25b9ef]"
+          : "bg-[#003b70] text-white hover:bg-[#09518f]",
+        ghost: dark
+          ? "border border-white/10 bg-white/10 text-white hover:bg-white/15"
+          : "border border-slate-200 bg-slate-100 text-slate-800 hover:bg-slate-200",
+        danger: "bg-red-500 text-white hover:bg-red-600"
+      };
+
+      return (
+        <button
+          className={cn(
+            "inline-flex items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50",
+            variants[variant],
+            className
+          )}
+          {...props}
+        >
+          {children}
+        </button>
+      );
+    }
+
+    function App() {
+      const [dark, setDark] = useState(true);
+      const [segment, setSegment] = useState({
+        name: "Trecho Piloto — Malha Rumo",
+        startKm: "KM 142+300",
+        endKm: "KM 142+520",
+        reference: "Pátio / Linha principal",
+        specialist: "Marcelo Dias",
+        intervalDays: 30,
+        alertPercent: 20
+      });
+      const [sleepers, setSleepers] = useState(initialSleepers);
+      const [inspections, setInspections] = useState([initialInspection]);
+      const [selectedInspectionId, setSelectedInspectionId] = useState(initialInspection.id);
+      const [newAmount, setNewAmount] = useState(6);
+      const [newDate, setNewDate] = useState(todayISO());
+      const [query, setQuery] = useState("");
+
+      useEffect(() => {
+        try {
+          const saved = localStorage.getItem(STORAGE_KEY);
+          if (!saved) return;
+
+          const parsed = JSON.parse(saved);
+          setDark(parsed.dark ?? true);
+          setSegment(parsed.segment || segment);
+          setSleepers(parsed.sleepers?.length ? parsed.sleepers : initialSleepers);
+          setInspections(parsed.inspections?.length ? parsed.inspections : [initialInspection]);
+          setSelectedInspectionId(parsed.selectedInspectionId || parsed.inspections?.[0]?.id || initialInspection.id);
+        } catch (error) {
+          console.warn("Não foi possível carregar os dados salvos.", error);
+        }
+      }, []);
+
+      useEffect(() => {
+        try {
+          localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({ dark, segment, sleepers, inspections, selectedInspectionId })
+          );
+        } catch (error) {
+          console.warn("Não foi possível salvar os dados no navegador.", error);
+        }
+      }, [dark, segment, sleepers, inspections, selectedInspectionId]);
+
+      const sortedInspections = useMemo(() => {
+        return [...inspections].sort((a, b) => a.date.localeCompare(b.date));
+      }, [inspections]);
+
+      const selectedInspection = inspections.find((inspection) => inspection.id === selectedInspectionId) || sortedInspections.at(-1);
+      const lastInspection = sortedInspections.at(-1);
+      const previousInspection = sortedInspections.at(-2);
+
+      const nextInspectionDate = lastInspection ? addDays(lastInspection.date, segment.intervalDays) : todayISO();
+      const daysSinceLast = lastInspection ? diffDays(lastInspection.date) : 0;
+      const overdue = daysSinceLast > Number(segment.intervalDays || 0);
+
+      const filteredSleepers = useMemo(() => {
+        const term = query.trim().toLowerCase();
+        if (!term) return sleepers;
+
+        return sleepers.filter((sleeper) => {
+          return [sleeper.id, sleeper.km, sleeper.trilho]
+            .join(" ")
+            .toLowerCase()
+            .includes(term);
+        });
+      }, [query, sleepers]);
+
+      const summary = useMemo(() => {
+        const base = Object.fromEntries(STATUS.map((status) => [status.key, 0]));
+        if (!lastInspection) return base;
+
+        sleepers.forEach((sleeper) => {
+          const statusKey = lastInspection.values[sleeper.id] || "bom";
+          base[statusKey] = (base[statusKey] || 0) + 1;
+        });
+
+        return base;
+      }, [lastInspection, sleepers]);
+
+      const degradation = useMemo(() => {
+        if (!lastInspection || !previousInspection) {
+          return { worsened: 0, critical: 0 };
+        }
+
+        let worsened = 0;
+        let critical = 0;
+
+        sleepers.forEach((sleeper) => {
+          const now = statusByKey[lastInspection.values[sleeper.id] || "bom"];
+          const before = statusByKey[previousInspection.values[sleeper.id] || "bom"];
+
+          if (now.score < before.score) worsened += 1;
+          if (["inservivel", "ruina"].includes(now.key)) critical += 1;
+        });
+
+        return { worsened, critical };
+      }, [lastInspection, previousInspection, sleepers]);
+
+      const criticalTotal = summary.inservivel + summary.ruina;
+      const criticalPercent = sleepers.length ? Math.round((criticalTotal / sleepers.length) * 100) : 0;
+      const needsAction = criticalPercent >= Number(segment.alertPercent || 0);
+
+      const subtleText = dark ? "text-blue-100/75" : "text-slate-600";
+      const inputClass = dark
+        ? "border-white/10 bg-white/10 text-white placeholder:text-blue-100/40 focus:border-[#13a8df]"
+        : "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:border-[#003b70]";
+
+      function updateSegment(field, value) {
+        setSegment((current) => ({ ...current, [field]: value }));
+      }
+
+      function updateSleeper(id, field, value) {
+        setSleepers((current) => {
+          return current.map((sleeper) => {
+            if (sleeper.id !== id) return sleeper;
+            return { ...sleeper, [field]: value };
+          });
+        });
+      }
+
+      function updateInspectionField(id, field, value) {
+        setInspections((current) => {
+          return current.map((inspection) => {
+            if (inspection.id !== id) return inspection;
+            return { ...inspection, [field]: value };
+          });
+        });
+      }
+
+      function cycleStatus(inspectionId, sleeperId) {
+        setInspections((current) => {
+          return current.map((inspection) => {
+            if (inspection.id !== inspectionId) return inspection;
+
+            const currentStatus = inspection.values[sleeperId] || "bom";
+            const currentIndex = STATUS.findIndex((status) => status.key === currentStatus);
+            const nextStatus = STATUS[(currentIndex + 1) % STATUS.length].key;
+
+            return {
+              ...inspection,
+              values: {
+                ...inspection.values,
+                [sleeperId]: nextStatus
+              }
+            };
+          });
+        });
+      }
+
+      function addSleepers() {
+        const amount = Math.max(1, Math.min(500, Number(newAmount || 1)));
+        const currentCount = sleepers.length;
+
+        const created = Array.from({ length: amount }, (_, index) => ({
+          id: `D-${String(currentCount + index + 1).padStart(3, "0")}`,
+          km: "",
+          trilho: (currentCount + index) % 2 === 0 ? "E" : "D"
+        }));
+
+        setSleepers((current) => [...current, ...created]);
+        setInspections((current) => {
+          return current.map((inspection) => ({
+            ...inspection,
+            values: {
+              ...inspection.values,
+              ...Object.fromEntries(created.map((sleeper) => [sleeper.id, "bom"]))
+            }
+          }));
+        });
+      }
+
+      function addInspection() {
+        const baseValues = sortedInspections.at(-1)?.values || {};
+        const values = Object.fromEntries(
+          sleepers.map((sleeper) => [sleeper.id, baseValues[sleeper.id] || "bom"])
+        );
+
+        const id = `insp-${Date.now()}`;
+        const newInspection = {
+          id,
+          date: newDate,
+          inspector: segment.specialist,
+          weather: "A definir",
+          notes: "Nova inspeção criada com os estados da última visita. Clique nas células para atualizar.",
+          values
+        };
+
+        setInspections((current) => [...current, newInspection]);
+        setSelectedInspectionId(id);
+      }
+
+      function exportCSV() {
+        const header = ["Data", "Inspetor", "Clima", "Observações", ...sleepers.map((sleeper) => sleeper.id)];
+        const rows = sortedInspections.map((inspection) => [
+          inspection.date,
+          inspection.inspector,
+          inspection.weather,
+          inspection.notes,
+          ...sleepers.map((sleeper) => statusByKey[inspection.values[sleeper.id] || "bom"].label)
+        ]);
+
+        const csv = [header, ...rows]
+          .map((row) => row.map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`).join(";"))
+          .join("\n");
+
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "monitoramento-dormentes-rumo.csv";
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+
+      function resetSystem() {
+        const confirmReset = window.confirm("Deseja apagar os dados salvos e voltar ao exemplo inicial?");
+        if (!confirmReset) return;
+
+        localStorage.removeItem(STORAGE_KEY);
+        setDark(true);
+        setSegment({
+          name: "Trecho Piloto — Malha Rumo",
+          startKm: "KM 142+300",
+          endKm: "KM 142+520",
+          reference: "Pátio / Linha principal",
+          specialist: "Marcelo Dias",
+          intervalDays: 30,
+          alertPercent: 20
+        });
+        setSleepers(initialSleepers);
+        setInspections([initialInspection]);
+        setSelectedInspectionId(initialInspection.id);
+      }
+
+      return (
+        <main className={cn(
+          "min-h-screen",
+          dark ? "bg-[#031a35] text-white" : "bg-[#f5f9fc] text-slate-900"
+        )}>
+          <div className="pointer-events-none fixed inset-0 overflow-hidden">
+            <div className="absolute -left-32 -top-32 h-96 w-96 rounded-full bg-[#13a8df]/25 blur-3xl"></div>
+            <div className="absolute right-0 top-16 h-[30rem] w-[30rem] rounded-full bg-[#00a887]/18 blur-3xl"></div>
+            <div className="absolute bottom-0 left-1/3 h-72 w-72 rounded-full bg-[#c7e86f]/12 blur-3xl"></div>
+          </div>
+
+          <div className="relative mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+            <header className="mb-6 overflow-hidden rounded-[2rem] border border-white/10 bg-gradient-to-br from-[#00457c] via-[#07355f] to-[#031a35] p-5 shadow-2xl shadow-black/20">
+              <div className="relative flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-sm font-bold text-blue-50">
+                    <Icon name="Train" className="h-4 w-4 text-[#c7e86f]" />
+                    Rumo • Monitoramento de dormentes em via
+                  </div>
+
+                  <h1 className="max-w-4xl text-3xl font-black tracking-tight text-white sm:text-5xl">
+                    Sistema de acompanhamento de condições de dormentes
+                  </h1>
+
+                  <p className="mt-3 max-w-3xl text-base leading-7 text-blue-100/85">
+                    Controle por trecho ferroviário, inspeção por data e evolução de cada dormente:
+                    bom, regular, inservível e ruína. A estrutura já está pronta para receber regras
+                    mais específicas de periodicidade depois.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button dark={true} variant="ghost" onClick={() => setDark((value) => !value)}>
+                    <Icon name={dark ? "Sun" : "Moon"} className="h-4 w-4" />
+                    Tema {dark ? "claro" : "escuro"}
+                  </Button>
+
+                  <Button dark={true} variant="ghost" onClick={exportCSV}>
+                    <Icon name="Download" className="h-4 w-4" />
+                    Exportar CSV
+                  </Button>
+
+                  <Button dark={true} variant="ghost" onClick={resetSystem}>
+                    <Icon name="RotateCcw" className="h-4 w-4" />
+                    Resetar
+                  </Button>
+                </div>
+              </div>
+            </header>
+
+            <section className="grid gap-4 lg:grid-cols-12">
+              <Card dark={dark} className="lg:col-span-4">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <p className={cn("text-sm font-bold", subtleText)}>Cadastro do trecho</p>
+                    <h2 className="text-xl font-black">Dados principais</h2>
+                  </div>
+                  <Icon name="MapPin" className="h-6 w-6 text-[#13a8df]" />
+                </div>
+
+                <div className="grid gap-3">
+                  <label className="grid gap-1 text-sm font-bold">
+                    Nome do trecho
+                    <input
+                      className={cn("rounded-xl border px-3 py-2 outline-none transition", inputClass)}
+                      value={segment.name}
+                      onChange={(event) => updateSegment("name", event.target.value)}
+                    />
+                  </label>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="grid gap-1 text-sm font-bold">
+                      KM inicial
+                      <input
+                        className={cn("rounded-xl border px-3 py-2 outline-none transition", inputClass)}
+                        value={segment.startKm}
+                        onChange={(event) => updateSegment("startKm", event.target.value)}
+                      />
+                    </label>
+
+                    <label className="grid gap-1 text-sm font-bold">
+                      KM final
+                      <input
+                        className={cn("rounded-xl border px-3 py-2 outline-none transition", inputClass)}
+                        value={segment.endKm}
+                        onChange={(event) => updateSegment("endKm", event.target.value)}
+                      />
+                    </label>
+                  </div>
+
+                  <label className="grid gap-1 text-sm font-bold">
+                    Local / referência
+                    <input
+                      className={cn("rounded-xl border px-3 py-2 outline-none transition", inputClass)}
+                      value={segment.reference}
+                      onChange={(event) => updateSegment("reference", event.target.value)}
+                    />
+                  </label>
+
+                  <label className="grid gap-1 text-sm font-bold">
+                    Especialista responsável
+                    <input
+                      className={cn("rounded-xl border px-3 py-2 outline-none transition", inputClass)}
+                      value={segment.specialist}
+                      onChange={(event) => updateSegment("specialist", event.target.value)}
+                    />
+                  </label>
+                </div>
+              </Card>
+
+              <Card dark={dark} className="lg:col-span-4">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <p className={cn("text-sm font-bold", subtleText)}>Regras ajustáveis</p>
+                    <h2 className="text-xl font-black">Periodicidade e alerta</h2>
+                  </div>
+                  <Icon name="Gauge" className="h-6 w-6 text-[#c7e86f]" />
+                </div>
+
+                <div className="grid gap-3">
+                  <label className="grid gap-1 text-sm font-bold">
+                    Intervalo previsto entre inspeções, em dias
+                    <input
+                      type="number"
+                      min="1"
+                      className={cn("rounded-xl border px-3 py-2 outline-none transition", inputClass)}
+                      value={segment.intervalDays}
+                      onChange={(event) => updateSegment("intervalDays", event.target.value)}
+                    />
+                  </label>
+
+                  <label className="grid gap-1 text-sm font-bold">
+                    Alerta quando críticos atingirem, em %
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      className={cn("rounded-xl border px-3 py-2 outline-none transition", inputClass)}
+                      value={segment.alertPercent}
+                      onChange={(event) => updateSegment("alertPercent", event.target.value)}
+                    />
+                  </label>
+
+                  <div className={cn(
+                    "rounded-2xl border p-3",
+                    overdue || needsAction
+                      ? "border-red-300/50 bg-red-500/10"
+                      : dark
+                        ? "border-[#c7e86f]/30 bg-[#c7e86f]/10"
+                        : "border-emerald-200 bg-emerald-50"
+                  )}>
+                    <p className="text-sm font-bold">Próxima inspeção sugerida</p>
+                    <p className="mt-1 text-2xl font-black">{formatDate(nextInspectionDate)}</p>
+                    <p className={cn("mt-1 text-sm", subtleText)}>
+                      Última visita há {daysSinceLast} dia(s). {overdue ? "Inspeção atrasada." : "Dentro do prazo configurado."}
+                    </p>
+                  </div>
+                </div>
+              </Card>
+
+              <Card dark={dark} className="lg:col-span-4">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <p className={cn("text-sm font-bold", subtleText)}>Visão executiva</p>
+                    <h2 className="text-xl font-black">Resumo atual</h2>
+                  </div>
+                  <Icon name="ClipboardCheck" className="h-6 w-6 text-[#13a8df]" />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {STATUS.map((status) => (
+                    <div
+                      key={status.key}
+                      className={cn(
+                        "rounded-2xl border p-3",
+                        dark ? "border-white/10 bg-white/10" : "border-slate-200 bg-slate-50"
+                      )}
+                    >
+                      <StatusPill statusKey={status.key} dark={dark} />
+                      <p className="mt-3 text-3xl font-black">{summary[status.key] || 0}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className={cn(
+                  "mt-3 rounded-2xl border p-3",
+                  needsAction
+                    ? "border-red-300/50 bg-red-500/10"
+                    : dark
+                      ? "border-white/10 bg-white/10"
+                      : "border-slate-200 bg-slate-50"
+                )}>
+                  <div className="flex items-start gap-2">
+                    <Icon name="AlertTriangle" className={cn("mt-0.5 h-5 w-5", needsAction ? "text-red-300" : "text-[#c7e86f]")} />
+                    <div>
+                      <p className="font-black">Críticos: {criticalPercent}%</p>
+                      <p className={cn("text-sm", subtleText)}>
+                        {degradation.worsened} dormente(s) pioraram desde a visita anterior. {degradation.critical} estão em inservível ou ruína.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            </section>
+
+            <section className="mt-4 grid gap-4 lg:grid-cols-12">
+              <Card dark={dark} className="lg:col-span-3">
+                <div className="mb-4 flex items-center justify-between">
+                  <div>
+                    <p className={cn("text-sm font-bold", subtleText)}>Dormentes</p>
+                    <h2 className="text-xl font-black">Cadastro rápido</h2>
+                  </div>
+                  <Icon name="Save" className="h-5 w-5 text-[#13a8df]" />
+                </div>
+
+                <div className="grid gap-3">
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      max="500"
+                      className={cn("min-w-0 flex-1 rounded-xl border px-3 py-2 outline-none transition", inputClass)}
+                      value={newAmount}
+                      onChange={(event) => setNewAmount(event.target.value)}
+                    />
+                    <Button dark={dark} onClick={addSleepers}>
+                      <Icon name="Plus" className="h-4 w-4" />
+                      Add
+                    </Button>
+                  </div>
+
+                  <div className="relative">
+                    <Icon name="Search" className={cn("absolute left-3 top-2.5 h-4 w-4", subtleText)} />
+                    <input
+                      className={cn("w-full rounded-xl border py-2 pl-9 pr-3 outline-none transition", inputClass)}
+                      placeholder="Buscar D-001, KM, trilho..."
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                    />
+                  </div>
+
+                  <div className="scroll-soft max-h-[28rem] space-y-2 overflow-auto pr-1">
+                    {filteredSleepers.map((sleeper) => (
+                      <div
+                        key={sleeper.id}
+                        className={cn(
+                          "rounded-2xl border p-3",
+                          dark ? "border-white/10 bg-white/10" : "border-slate-200 bg-slate-50"
+                        )}
+                      >
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <strong>{sleeper.id}</strong>
+                          <StatusPill statusKey={lastInspection?.values[sleeper.id] || "bom"} dark={dark} />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            className={cn("rounded-lg border px-2 py-1.5 text-sm outline-none transition", inputClass)}
+                            placeholder="KM"
+                            value={sleeper.km}
+                            onChange={(event) => updateSleeper(sleeper.id, "km", event.target.value)}
+                          />
+
+                          <select
+                            className={cn("rounded-lg border px-2 py-1.5 text-sm outline-none transition", inputClass)}
+                            value={sleeper.trilho}
+                            onChange={(event) => updateSleeper(sleeper.id, "trilho", event.target.value)}
+                          >
+                            <option value="E">Trilho E</option>
+                            <option value="D">Trilho D</option>
+                            <option value="Centro">Centro</option>
+                          </select>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </Card>
+
+              <Card dark={dark} className="lg:col-span-9">
+                <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+                  <div>
+                    <p className={cn("text-sm font-bold", subtleText)}>Planilha operacional</p>
+                    <h2 className="text-2xl font-black">Inspeções por dia × dormentes por coluna</h2>
+                    <p className={cn("mt-1 text-sm", subtleText)}>
+                      Clique em uma célula para evoluir o status: Bom → Regular → Inservível → Ruína → Bom.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <input
+                      type="date"
+                      className={cn("rounded-xl border px-3 py-2 outline-none transition", inputClass)}
+                      value={newDate}
+                      onChange={(event) => setNewDate(event.target.value)}
+                    />
+
+                    <Button dark={dark} onClick={addInspection}>
+                      <Icon name="CalendarDays" className="h-4 w-4" />
+                      Nova inspeção
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="mb-4 flex flex-wrap gap-2">
+                  {STATUS.map((status) => (
+                    <StatusPill key={status.key} statusKey={status.key} dark={dark} />
+                  ))}
+                </div>
+
+                <div className={cn(
+                  "scroll-soft overflow-auto rounded-2xl border",
+                  dark ? "border-white/10" : "border-slate-200"
+                )}>
+                  <table className="min-w-full border-separate border-spacing-0 text-sm">
+                    <thead>
+                      <tr className={dark ? "bg-[#02152b]" : "bg-slate-100"}>
+                        <th className={cn(
+                          "sticky left-0 z-20 min-w-32 border-b border-r px-3 py-3 text-left font-black",
+                          dark ? "border-white/10 bg-[#02152b]" : "border-slate-200 bg-slate-100"
+                        )}>
+                          Data
+                        </th>
+
+                        <th className={cn(
+                          "min-w-36 border-b border-r px-3 py-3 text-left font-black",
+                          dark ? "border-white/10" : "border-slate-200"
+                        )}>
+                          Inspetor
+                        </th>
+
+                        {sleepers.map((sleeper) => (
+                          <th
+                            key={sleeper.id}
+                            className={cn(
+                              "min-w-24 border-b border-r px-2 py-3 text-center font-black",
+                              dark ? "border-white/10" : "border-slate-200"
+                            )}
+                          >
+                            <div>{sleeper.id}</div>
+                            <div className={cn("text-[11px] font-medium", subtleText)}>
+                              {sleeper.km || `Trilho ${sleeper.trilho}`}
+                            </div>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {sortedInspections.map((inspection) => (
+                        <tr
+                          key={inspection.id}
+                          className={cn(
+                            selectedInspection?.id === inspection.id
+                              ? dark
+                                ? "bg-[#13a8df]/12"
+                                : "bg-blue-50"
+                              : dark
+                                ? "bg-white/[0.03]"
+                                : "bg-white"
+                          )}
+                        >
+                          <td
+                            className={cn(
+                              "sticky left-0 z-10 cursor-pointer border-b border-r px-3 py-2 font-bold",
+                              dark ? "border-white/10 bg-[#06284d]" : "border-slate-200 bg-white"
+                            )}
+                            onClick={() => setSelectedInspectionId(inspection.id)}
+                          >
+                            {formatDate(inspection.date)}
+                          </td>
+
+                          <td className={cn(
+                            "border-b border-r px-3 py-2",
+                            dark ? "border-white/10" : "border-slate-200"
+                          )}>
+                            {inspection.inspector}
+                          </td>
+
+                          {sleepers.map((sleeper) => {
+                            const current = statusByKey[inspection.values[sleeper.id] || "bom"];
+
+                            return (
+                              <td
+                                key={`${inspection.id}-${sleeper.id}`}
+                                className={cn(
+                                  "border-b border-r p-1",
+                                  dark ? "border-white/10" : "border-slate-200"
+                                )}
+                              >
+                                <button
+                                  title={`${sleeper.id}: ${current.label}`}
+                                  onClick={() => cycleStatus(inspection.id, sleeper.id)}
+                                  className={cn(
+                                    "cell-button mx-auto flex h-9 w-16 items-center justify-center rounded-xl text-xs font-black text-slate-950 shadow-sm",
+                                    current.cell
+                                  )}
+                                >
+                                  {current.short}
+                                </button>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {selectedInspection && (
+                  <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                    <label className="grid gap-1 text-sm font-bold">
+                      Data selecionada
+                      <input
+                        type="date"
+                        className={cn("rounded-xl border px-3 py-2 outline-none transition", inputClass)}
+                        value={selectedInspection.date}
+                        onChange={(event) => updateInspectionField(selectedInspection.id, "date", event.target.value)}
+                      />
+                    </label>
+
+                    <label className="grid gap-1 text-sm font-bold">
+                      Inspetor
+                      <input
+                        className={cn("rounded-xl border px-3 py-2 outline-none transition", inputClass)}
+                        value={selectedInspection.inspector}
+                        onChange={(event) => updateInspectionField(selectedInspection.id, "inspector", event.target.value)}
+                      />
+                    </label>
+
+                    <label className="grid gap-1 text-sm font-bold">
+                      Condição climática
+                      <input
+                        className={cn("rounded-xl border px-3 py-2 outline-none transition", inputClass)}
+                        value={selectedInspection.weather}
+                        onChange={(event) => updateInspectionField(selectedInspection.id, "weather", event.target.value)}
+                      />
+                    </label>
+
+                    <label className="grid gap-1 text-sm font-bold lg:col-span-3">
+                      Observações da inspeção
+                      <textarea
+                        rows="3"
+                        className={cn("rounded-xl border px-3 py-2 outline-none transition", inputClass)}
+                        value={selectedInspection.notes}
+                        onChange={(event) => updateInspectionField(selectedInspection.id, "notes", event.target.value)}
+                      ></textarea>
+                    </label>
+                  </div>
+                )}
+              </Card>
+            </section>
+          </div>
+        </main>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+</body>
+</html>
