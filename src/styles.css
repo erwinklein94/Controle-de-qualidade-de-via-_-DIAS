@@ -516,3 +516,25 @@ button {
     height: 28px;
   }
 }
+
+/* Seleção de condição: o botão escolhido fica branco com letra preta,
+   destacando claramente dos demais no tema escuro e no tema claro. */
+.cell-option.active,
+.cell-option.status-bom.active,
+.cell-option.status-regular.active,
+.cell-option.status-inservivel.active,
+.cell-option.status-ruina.active,
+body[data-theme="dark"] .cell-option.active,
+body[data-theme="dark"] .cell-option.status-bom.active,
+body[data-theme="dark"] .cell-option.status-regular.active,
+body[data-theme="dark"] .cell-option.status-inservivel.active,
+body[data-theme="dark"] .cell-option.status-ruina.active {
+  background: #ffffff !important;
+  color: #111111 !important;
+  border-color: #ffffff !important;
+  box-shadow: 0 0 0 2px rgba(255,255,255,.30), 0 10px 22px rgba(0,0,0,.28) !important;
+}
+
+.cell-option.active:hover {
+  filter: none;
+}
