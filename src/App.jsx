@@ -135,7 +135,7 @@ function createTrack(name = 'Trecho exemplo - Malha Central', count = 16) {
     id: uid('trecho'),
     name,
     malha: 'Malha Central',
-    equipment: 'Equipamento / local a informar',
+    equipment: '',
     responsible: 'Marcelo Dias / equipe',
     kmStart: 'km 123+000',
     kmEnd: 'km 123+500',
@@ -149,7 +149,7 @@ function createTrack(name = 'Trecho exemplo - Malha Central', count = 16) {
     sleeperCount: count,
     sleepers,
     inspections: [createInspection(sleepers, today(), 'Inspeção inicial', true)],
-    notes: 'Registrar características do local, acesso, observações de via e pontos de atenção.'
+    notes: ''
   }
 }
 
@@ -160,47 +160,106 @@ function addDays(date, days) {
 }
 
 function demoTracks() {
-  const base = today()
-  const d2 = addDays(base, 30)
-  const d3 = addDays(base, 60)
-  const a = createTrack('MC - Serra de Santos', 18)
-  const b = createTrack('MC - Pátio Norte', 16)
-  const c = createTrack('FN - Ramal Sul', 16)
-
-  a.equipment = 'Equipamento MC-021'
-  a.hasJointWeld = 'sim'
-  a.jointSurroundingGood = 'nao'
-  a.inspections = [
-    createInspection(a.sleepers, base, 'Base inicial', true),
-    createInspection(a.sleepers, d2, 'Primeira piora observada', true),
-    createInspection(a.sleepers, d3, 'Cluster crítico próximo de junta/solda', true)
+  const startDate = addDays(today(), -14 * 14)
+  const trackNames = [
+    'MC - Serra de Santos',
+    'MC - Pátio Norte',
+    'FN - Ramal Sul',
+    'MP - Baixada Santista',
+    'MC - Corredor Norte',
+    'FN - Pátio Leste',
+    'MS - Intercâmbio Sul',
+    'MP - Travessia Urbana',
+    'MC - Linha Principal 01',
+    'FN - Serra Norte',
+    'MP - Desvio Industrial',
+    'MC - Ponte Seca',
+    'FN - Ramal Armazém',
+    'MS - Pátio Oeste',
+    'MC - Acesso Terminal'
   ]
-  ;['D004', 'D005', 'D006', 'D011'].forEach((id) => { a.inspections[1].conditions[id] = 'regular' })
-  ;['D004', 'D005'].forEach((id) => { a.inspections[2].conditions[id] = 'inservivel' })
-  a.inspections[2].conditions.D006 = 'ruina'
-  ;['D007', 'D011', 'D012'].forEach((id) => { a.inspections[2].conditions[id] = 'regular' })
-
-  b.equipment = 'Equipamento MC-044'
-  b.geometryType = 'curva'
-  b.hasGaugeLoss = 'sim'
-  b.inspections = [
-    createInspection(b.sleepers, base, 'Inspeção inicial', true),
-    createInspection(b.sleepers, d2, 'Degradação moderada', true),
-    createInspection(b.sleepers, d3, 'Acompanhar regulares adjacentes', true)
+  const malhas = ['Malha Central', 'Ferronorte', 'Malha Paulista', 'Malha Sul']
+  const notesByStep = [
+    'Base inicial da prospecção',
+    'Conferência visual sem alteração relevante',
+    'Primeiros regulares pontuais',
+    'Regulares adjacentes em acompanhamento',
+    'Aumento de regulares no trecho',
+    'Primeira evolução para inservível',
+    'Acompanhar possível formação de malha',
+    'Cluster curto identificado',
+    'Expansão de dormentes inservíveis',
+    'Verificar necessidade de programação',
+    'Ponto crítico com nova ruína',
+    'Revisão da marcação de prospecção',
+    'Priorizar substituição no planejamento',
+    'Conferência para apresentação gerencial',
+    'Última leitura da série exemplo'
   ]
-  ;['D002', 'D003', 'D009', 'D010'].forEach((id) => { b.inspections[1].conditions[id] = 'regular' })
-  ;['D002', 'D003'].forEach((id) => { b.inspections[2].conditions[id] = 'inservivel' })
-  ;['D004', 'D009', 'D010', 'D011'].forEach((id) => { b.inspections[2].conditions[id] = 'regular' })
 
-  c.malha = 'Ferronorte'
-  c.equipment = 'Equipamento FN-009'
-  c.inspections = [
-    createInspection(c.sleepers, base, 'Trecho estável', true),
-    createInspection(c.sleepers, d2, 'Pouca alteração', true),
-    createInspection(c.sleepers, d3, 'Manter monitoramento', true)
-  ]
-  c.inspections[2].conditions.D014 = 'regular'
-  return [a, b, c]
+  function setIfExists(inspection, id, status) {
+    if (Object.prototype.hasOwnProperty.call(inspection.conditions, id)) inspection.conditions[id] = status
+  }
+
+  return trackNames.map((name, trackIndex) => {
+    const sleeperCount = 18 + (trackIndex % 5) * 2
+    const track = createTrack(name, sleeperCount)
+    track.malha = malhas[trackIndex % malhas.length]
+    track.equipment = `Equipamento ${String(trackIndex + 1).padStart(2, '0')}`
+    track.responsible = trackIndex % 3 === 0 ? 'Marcelo Dias / equipe' : 'Equipe de prospecção'
+    track.geometryType = trackIndex % 4 === 1 ? 'curva' : 'tangente'
+    track.sleeperMaterial = trackIndex % 5 === 2 ? 'madeira' : 'concreto'
+    track.trackClass = ['C.2', 'C.3', 'C.4', 'C.5'][trackIndex % 4]
+    track.kmStart = `km ${String(120 + trackIndex).padStart(3, '0')}+000`
+    track.kmEnd = `km ${String(120 + trackIndex).padStart(3, '0')}+500`
+    track.hasGaugeLoss = trackIndex % 4 === 0 ? 'sim' : 'nao'
+    track.hasSupportLoss = trackIndex % 5 === 0 ? 'sim' : 'nao'
+    track.hasJointWeld = trackIndex % 3 === 0 ? 'sim' : 'nao'
+    track.jointSurroundingGood = trackIndex % 6 === 0 ? 'nao' : 'sim'
+    track.notes = ''
+
+    track.inspections = Array.from({ length: 15 }, (_, step) => {
+      const inspection = createInspection(
+        track.sleepers,
+        addDays(startDate, step * 14),
+        notesByStep[step],
+        true
+      )
+
+      track.sleepers.forEach((sleeper) => {
+        const seed = (trackIndex * 11 + sleeper.number * 7) % 19
+        const regularAt = 2 + (seed % 6)
+        const inservivelAt = regularAt + 3 + (seed % 3)
+        const ruinaAt = inservivelAt + 3 + (seed % 4)
+        let status = 'bom'
+        if (step >= regularAt) status = 'regular'
+        if (step >= inservivelAt) status = 'inservivel'
+        if (step >= ruinaAt && (seed % 5 === 0 || trackIndex % 5 === 0)) status = 'ruina'
+        inspection.conditions[sleeper.id] = status
+      })
+
+      // Força alguns agrupamentos para demonstrar clusters/malhas nos gráficos.
+      if (step >= 6) {
+        ;['D004', 'D005'].forEach((id) => setIfExists(inspection, id, 'inservivel'))
+      }
+      if (step >= 8 && trackIndex % 2 === 0) {
+        ;['D006', 'D007'].forEach((id) => setIfExists(inspection, id, 'inservivel'))
+      }
+      if (step >= 10 && trackIndex % 3 === 0) {
+        setIfExists(inspection, 'D006', 'ruina')
+        setIfExists(inspection, 'D007', 'ruina')
+        ;['D003', 'D008'].forEach((id) => setIfExists(inspection, id, 'regular'))
+      }
+      if (step >= 12 && trackIndex % 4 === 1) {
+        ;['D010', 'D011', 'D012'].forEach((id) => setIfExists(inspection, id, 'inservivel'))
+        setIfExists(inspection, 'D011', 'ruina')
+      }
+
+      return inspection
+    })
+
+    return track
+  })
 }
 
 function ensureTrackShape(track, index = 0) {
@@ -925,7 +984,6 @@ export default function App() {
               <div className="track-form">
                 <div className="form-grid form-grid-expanded">
                   <label>Nome do trecho<input value={selectedTrack.name} onChange={(e) => updateTrack({ name: e.target.value })} /></label>
-                  <label>Equipamento / ativo<input value={selectedTrack.equipment || ''} onChange={(e) => updateTrack({ equipment: e.target.value })} /></label>
                   <label>Responsável / equipe<input value={selectedTrack.responsible || ''} onChange={(e) => updateTrack({ responsible: e.target.value })} /></label>
                   <label>Malha<select value={selectedTrack.malha || 'Malha Central'} onChange={(e) => updateTrack({ malha: e.target.value })}><option>Malha Central</option><option>Ferronorte</option><option>Malha Paulista</option><option>Outra</option></select></label>
                   <label>Material<select value={selectedTrack.sleeperMaterial || 'concreto'} onChange={(e) => updateTrack({ sleeperMaterial: e.target.value })}><option value="concreto">Concreto</option><option value="madeira">Madeira</option><option value="aco">Aço</option><option value="polimero">Polímero</option></select></label>
@@ -933,13 +991,9 @@ export default function App() {
                   <label>Classe<input value={selectedTrack.trackClass || ''} onChange={(e) => updateTrack({ trackClass: e.target.value })} placeholder="Ex.: C.3" /></label>
                   <label>KM inicial<input value={selectedTrack.kmStart || ''} onChange={(e) => updateTrack({ kmStart: e.target.value })} /></label>
                   <label>KM final<input value={selectedTrack.kmEnd || ''} onChange={(e) => updateTrack({ kmEnd: e.target.value })} /></label>
-                  <label>Perda de bitola?<select value={selectedTrack.hasGaugeLoss || 'nao'} onChange={(e) => updateTrack({ hasGaugeLoss: e.target.value })}><option value="nao">Não</option><option value="sim">Sim</option></select></label>
-                  <label>Perda de suporte?<select value={selectedTrack.hasSupportLoss || 'nao'} onChange={(e) => updateTrack({ hasSupportLoss: e.target.value })}><option value="nao">Não</option><option value="sim">Sim</option></select></label>
-                  <label>Junta/solda?<select value={selectedTrack.hasJointWeld || 'nao'} onChange={(e) => updateTrack({ hasJointWeld: e.target.value })}><option value="nao">Não</option><option value="sim">Sim</option></select></label>
-                  <label>Dormentes bons antes/depois da junta?<select value={selectedTrack.jointSurroundingGood || 'sim'} onChange={(e) => updateTrack({ jointSurroundingGood: e.target.value })}><option value="sim">Sim</option><option value="nao">Não</option></select></label>
                   <label>Quantidade de dormentes<span className="input-with-button"><input type="number" min="1" max="300" value={selectedTrack.sleeperCount} onChange={(e) => updateTrack({ sleeperCount: e.target.value })} /><button onClick={applySleeperCount}>Aplicar</button></span></label>
                 </div>
-                <label className="full-label">Observações do local<textarea rows={4} value={selectedTrack.notes || ''} onChange={(e) => updateTrack({ notes: e.target.value })} /></label>
+                <label className="full-label compact-notes">Observações do local<textarea rows={2} placeholder="Observações rápidas do local" value={selectedTrack.notes || ''} onChange={(e) => updateTrack({ notes: e.target.value })} /></label>
                 <button className="danger outline" disabled={tracks.length === 1} onClick={() => removeTrack(selectedTrack.id)}><Trash2 size={16} /> Excluir trecho selecionado</button>
               </div>
             </div>
