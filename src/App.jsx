@@ -444,6 +444,80 @@ function escapeExcel(value) {
     .replaceAll('"', '&quot;')
 }
 
+
+function sanitizeFileName(value) {
+  return String(value || 'arquivo')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9-_]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase()
+}
+
+function statusCellStyle(statusKey) {
+  const status = STATUS[normalizeStatus(statusKey)]
+  const darkText = statusKey === 'regular'
+  return `background:${status.color};color:${darkText ? '#111111' : '#ffffff'};font-weight:800;text-align:center;`
+}
+
+function buildInspectionGradeHtml(track, mode = 'pdf') {
+  const sortedInspections = [...(track.inspections || [])].sort((a, b) => parseDate(a.date) - parseDate(b.date))
+  const sleepers = track.sleepers || []
+  const title = `Grade de inspeção de dormentes - ${escapeExcel(track.name)}`
+  const sleeperHeaders = sleepers.map((sleeper) => `<th>${escapeExcel(sleeper.id)}</th>`).join('')
+  const rows = sortedInspections.map((inspection) => {
+    const cells = sleepers.map((sleeper) => {
+      const key = normalizeStatus(inspection.conditions?.[sleeper.id] || 'bom')
+      const content = mode === 'excel' ? STATUS[key].label : STATUS[key].short
+      return `<td style="${statusCellStyle(key)}">${escapeExcel(content)}</td>`
+    }).join('')
+    return `<tr><td>${escapeExcel(formatDate(inspection.date))}</td><td>${escapeExcel(inspection.notes)}</td>${cells}</tr>`
+  }).join('')
+
+  const legend = Object.entries(STATUS).map(([key, status]) => `<span style="display:inline-block;margin:0 8px 8px 0;padding:6px 10px;border-radius:10px;${statusCellStyle(key)}">${escapeExcel(status.short)} - ${escapeExcel(status.label)}</span>`).join('')
+
+  return `
+    <html>
+      <head>
+        <meta charset="UTF-8" />
+        <title>${title}</title>
+        <style>
+          body { font-family: Arial, sans-serif; color: #123a63; margin: 18px; }
+          h1 { margin: 0 0 8px; color: #083b6e; font-size: 22px; }
+          h2 { margin: 18px 0 8px; color: #083b6e; font-size: 16px; }
+          p { margin: 4px 0; }
+          table { border-collapse: collapse; width: 100%; font-size: 11px; }
+          th, td { border: 1px solid #9eb8d2; padding: 6px; white-space: nowrap; }
+          th { background: #eaf3fb; color: #083b6e; font-weight: 800; }
+          .meta { margin: 12px 0 14px; padding: 10px; border: 1px solid #d7e3ef; border-radius: 10px; background: #f6fbff; }
+          .legend { margin: 10px 0 14px; }
+          @media print {
+            body { margin: 10mm; }
+            table { font-size: 9px; }
+            th, td { padding: 4px; }
+          }
+        </style>
+      </head>
+      <body>
+        <h1>${title}</h1>
+        <div class="meta">
+          <p><strong>Trecho:</strong> ${escapeExcel(track.name)}</p>
+          <p><strong>KM:</strong> ${escapeExcel(track.kmStart)} até ${escapeExcel(track.kmEnd)}</p>
+          <p><strong>Malha:</strong> ${escapeExcel(track.malha)} &nbsp; <strong>Equipamento:</strong> ${escapeExcel(track.equipment)}</p>
+          <p><strong>Responsável:</strong> ${escapeExcel(track.responsible)} &nbsp; <strong>Material:</strong> ${escapeExcel(track.sleeperMaterial)}</p>
+        </div>
+        <div class="legend">${legend}</div>
+        <h2>Grade de inspeção</h2>
+        <table>
+          <thead><tr><th>Data</th><th>Observação</th>${sleeperHeaders}</tr></thead>
+          <tbody>${rows || '<tr><td colspan="2">Sem inspeções registradas.</td></tr>'}</tbody>
+        </table>
+      </body>
+    </html>
+  `
+}
+
 function getFilteredTrackIds(tracks, selectedDashboardTrack) {
   return selectedDashboardTrack === 'all' ? tracks.map((track) => track.id) : [selectedDashboardTrack]
 }
@@ -717,6 +791,40 @@ export default function App() {
     setTimeout(() => window.print(), 150)
   }
 
+  function exportInspectionGradeExcel() {
+    const html = buildInspectionGradeHtml(selectedTrack, 'excel')
+    const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `grade-inspecao-${sanitizeFileName(selectedTrack.name)}.xls`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
+  function printInspectionGradePDF() {
+    const html = buildInspectionGradeHtml(selectedTrack, 'pdf')
+    const frame = document.createElement('iframe')
+    frame.style.position = 'fixed'
+    frame.style.right = '0'
+    frame.style.bottom = '0'
+    frame.style.width = '0'
+    frame.style.height = '0'
+    frame.style.border = '0'
+    document.body.appendChild(frame)
+    const doc = frame.contentWindow.document
+    doc.open()
+    doc.write(html)
+    doc.close()
+    setTimeout(() => {
+      frame.contentWindow.focus()
+      frame.contentWindow.print()
+      setTimeout(() => document.body.removeChild(frame), 1200)
+    }, 250)
+  }
+
   const tabItems = [
     { id: 'trechos', label: 'Registro de trechos', icon: Train },
     { id: 'inspecao', label: 'Inspeção', icon: ClipboardList },
@@ -863,6 +971,10 @@ export default function App() {
                 <div>
                   <h2>Grade de inspeção</h2>
                   <p className="muted">Cada linha é uma ida ao trecho. Cada coluna é um dormente. Para evitar esbarrão no celular, a linha só altera depois de clicar em <strong>Editar linha</strong>.</p>
+                </div>
+                <div className="actions no-print">
+                  <button className="success" onClick={exportInspectionGradeExcel}><FileSpreadsheet size={16} /> Excel da grade</button>
+                  <button className="danger" onClick={printInspectionGradePDF}><FileText size={16} /> PDF da grade</button>
                 </div>
               </div>
               <div className="table-wrap">
