@@ -380,3 +380,139 @@ body[data-theme="dark"] .status-bom { color: #b9ddff; }
   th, td { font-size: 10px; padding: 5px; color: #123a63; }
   .sticky-col { position: static; }
 }
+
+/* Ajuste mobile: impede que a aba de inspeção e a grade estiquem a página inteira.
+   A rolagem lateral fica apenas dentro da caixa da tabela. */
+html,
+body,
+#root {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.app,
+.content,
+.panel,
+.metric-card,
+.chart-card,
+.hero,
+.quick-save,
+.track-management,
+.track-form,
+.inspection-top-grid,
+.dashboard-filter-grid,
+.form-grid,
+.form-grid-expanded,
+.procedures-grid,
+.split,
+.charts,
+.metrics {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.app {
+  width: 100%;
+  overflow-x: hidden;
+}
+
+.panel,
+.hero,
+.quick-save {
+  overflow: hidden;
+}
+
+.inspection-top-grid > *,
+.dashboard-filter-grid > *,
+.form-grid > *,
+.form-grid-expanded > *,
+.track-form > *,
+.content > *,
+.panel > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+input,
+textarea,
+select,
+button {
+  max-width: 100%;
+}
+
+.legend,
+.actions,
+.hero-menu-row {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.table-wrap {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x pan-y;
+}
+
+.table-wrap table {
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+}
+
+.inspection-table {
+  width: max-content;
+  min-width: max-content;
+}
+
+.inspection-table input {
+  max-width: 100%;
+}
+
+@media (max-width: 760px) {
+  .inspection-top-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .legend {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .legend span {
+    width: 100%;
+    text-align: center;
+  }
+
+  .inspection-table th,
+  .inspection-table td {
+    padding: 7px;
+  }
+
+  .inspection-table input {
+    min-width: 118px;
+  }
+
+  .inspection-table td:nth-child(3) input {
+    min-width: 180px;
+  }
+
+  .action-cell button {
+    min-width: 96px;
+  }
+
+  .cell-stack {
+    min-width: 44px;
+  }
+
+  .cell-option {
+    width: 42px;
+    height: 28px;
+  }
+}
