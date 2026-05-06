@@ -939,11 +939,6 @@ export default function App() {
             <span>{selectedTrack?.sleeperCount} dormentes</span>
           </div>
         </div>
-        <div className="app-preview-card">
-          <div className="phone-top">rumo</div>
-          <div className="phone-card">Trecho ativo<br /><strong>{selectedTrack?.name}</strong></div>
-          <div className="phone-grid"><span /> <span /> <span /> <span /></div>
-        </div>
       </header>
 
       <section className="quick-save no-print">
